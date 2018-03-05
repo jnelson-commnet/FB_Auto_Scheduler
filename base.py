@@ -12,6 +12,7 @@ homey = os.path.abspath(os.path.dirname(__file__))
 forecastFilename = os.path.join(homey, 'RegularForecast.xlsx')
 mfgCentersFilename = os.path.join(homey, 'MfgCenters.xlsx')
 moFilename = os.path.join(homey, 'MOs.xlsx')
+laborAvailFilename = os.path.join(homey, 'LaborAvailablePerDay.xlsx')
 
 ### -----------------------------------
 # This section uses the MO's listed in Fishbowl as well as the Mfg Centers to create an
