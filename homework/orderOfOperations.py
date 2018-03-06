@@ -19,11 +19,11 @@ idealSchedule = run_auto_schedule(proLine, moPriority, moLaborNeeded, laborAvail
 # 	shortages, then the Pro Line will not be able to follow this schedule.  To find these part shortages, we need to run
 #	the FB_Simulator.
 
-orderTimeline = run_fb_sim(idealSchedule)	# The FB_Sim would usually run its own set of queries for everything is needs.  This should be done already
+orderTimeline = run_fb_sim(idealSchedule)	# The FB_Sim would usually run its own set of queries for everything it needs.  This should be done already
 											# since a lot of this info is going to be used repeatedly.
 
 # The order timeline will contain any phantom POs created to fill shortages in the schedule.  These shortages need to be checked for lead times.
-#	If a part has a 4 week lead time, then the MO that requires the part should be built until 4 weeks from the day the order is placed.  Assume
+#	If a part has a 4 week lead time, then the MO that requires the part should not be built until 4 weeks from the day the order is placed.  Assume
 #	the order will be placed tomorrow and will need a day to process once received.  Plus the schedule dates are when the MOs are being finished.
 #	So the "earliest end date" for each MO will be the lead time of its longest lead shortage plus 2 days for processing and the expected run time
 #	of the part in the Pro Line.

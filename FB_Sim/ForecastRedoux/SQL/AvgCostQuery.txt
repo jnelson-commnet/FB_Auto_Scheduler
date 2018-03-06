@@ -1,0 +1,8 @@
+Select
+        PART.NUM as "PART",
+        partcost.avgcost as "AvgCost"
+from
+	part
+	left join partcost on part.id = partcost.partid
+where
+	PART.TYPEID = 10
