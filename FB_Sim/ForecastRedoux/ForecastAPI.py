@@ -8,7 +8,7 @@ sys.path.insert(0, 'Z:\Python projects\FishbowlAPITestProject')
 # Test server:
 # sys.path.insert(0, 'Z:\Python projects\FB_API_TestServer')
 
-import connecttest
+# import connecttest
 
 # homey = os.getcwd()
 homey = os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..'))
