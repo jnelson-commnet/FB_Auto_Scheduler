@@ -1,5 +1,7 @@
 __author__ = 'Jack'
 
+### IMPORTS ###
+
 import os
 import sys
 import pandas as pd
@@ -26,37 +28,159 @@ moFilename = os.path.join(dataPath, 'MOs.xlsx')
 laborAvailFilename = os.path.join(dataPath, 'LaborAvailablePerDay.xlsx')
 leadFilename = os.path.join(dataPath, 'LeadTimes.xlsx')
 
+### QUERIES ###
+
 # going to borrow some of the FB_Sim to run queries
 ### HEY! This would be good to move for better access and clarity
 sys.path.insert(0, forcPath)
 import ForecastMain as fm
 import ForecastAPI as fa
 # pull the usual FB_Sim queries
-fa.run_queries(queryPath=sqlPath, dataPath=dataPath)
+# fa.run_queries(queryPath=sqlPath, dataPath=dataPath)
 
-### -----------------------------------
-# This section uses the MO's listed in Fishbowl as well as the Mfg Centers to create an
-#	estimate of labor needed and a priority of work to be done.
+### GET DATA ###
 
-# save mfgCenters as dataFrame, includes MFG Center assignments and Setup/labor time estimates
+# save mfgCenters as df, includes MFG Center assignments and Setup/labor time estimates
 mfgCenters = pd.read_excel(mfgCentersFilename, header=0)
-
 # save current Manufacture Orders
 modf = pd.read_excel(moFilename, header=0)
+# save lead time estimates
+leadTimes = pd.read_excel(leadFilename, header=0)
+# this is a placeholder for a calculation of start to finish time for a build.
+# just using it for earliest schedule date right now.
+orderRunTime = 7
+
+### MAKE DATE LIST ###
 
 # make a date list with labor availability
 dateList = sch.create_date_list(dailyLabor=11)
 
-# run the auto schedule to get an ideal schedule by priority
-moLinesLabor = sch.run_auto_schedule(modf=modf, mfgCenters=mfgCenters, dateList=dateList)
+### CREATE IDEAL SCHEDULE ###
 
+# prep mo list with mfg centers and labor estimates
+preppedMOdf = sch.pre_schedule_prep(modf=modf.copy(), mfgCenters=mfgCenters.copy())
+# run the auto schedule to get an ideal schedule by priority
+moLinesLabor = sch.run_auto_schedule(moLinesLabor=preppedMOdf.copy(), dateList=dateList.copy())
 # use the last scheduled FG in an order to save an ideal schedule
 idealSchedule = moLinesLabor.drop_duplicates('ORDER', keep='last')
+
+### RUN THE SIM ###
 
 # replace the schedule dates on the MO order lines with the new dates for those orders
 newMOdf = pd.merge(modf.copy(), idealSchedule[['ORDER', 'NewDate']].copy(), how='left', on='ORDER')
 newMOdf['DATESCHEDULED'] = newMOdf['NewDate'].copy()
 newMOdf.drop(labels='NewDate', axis=1, inplace=True)
+# run the new MO schedule through the FB_Sim to find phantom orders
+orderTimeline = fm.run_normal_forecast_tiers_v3(dataPath=dataPath, includeSO=False, subMO=newMOdf.copy())
+
+### GET SCHEDULE LIMITS ###
+
+orderLeads = sch.get_earliest_leads(orderTimeline=orderTimeline.copy(),
+                                    leadTimes=leadTimes.copy(),
+                                    dateList=dateList.copy(),
+                                    orderRunTime=orderRunTime)
+
+
+sch.analyze_schedule(newMOdf=newMOdf.copy(),
+					 orderLeads=orderLeads.copy(),
+					 modf=modf.copy(),
+					 mfgCenters=mfgCenters.copy(),
+					 dateList=dateList.copy(),
+					 orderRunTime=orderRunTime)
+
+"""
+### ANALYZE SCHEDULE ###
+
+def analyze_schedule(newMOdf, orderLeads, modf, mfgCenters, dateList, orderRunTime):
+	print('in analyze_schedule')
+	tempMOdf = newMOdf.sort_values(by=['ORDER','DATESCHEDULED'], ascending=[True, True]).copy()
+	tempMOdf.drop_duplicates('ORDER', keep='first', inplace=True)
+	checkSched = pd.merge(tempMOdf[['ORDER','DATESCHEDULED']].copy(),
+						  orderLeads[['ORDER','EarliestScheduleDate']].copy(),
+						  how='left', on='ORDER')
+	checkSched['TimeDiff'] = np.nan
+	for each in range(0, len(checkSched)):
+	    if checkSched['DATESCHEDULED'].iat[each] < checkSched['EarliestScheduleDate'].iat[each]:
+	        checkSched['TimeDiff'] = 'here'
+	        print(checkSched['ORDER'].iat[each])
+	if len(checkSched.dropna()) != 0:
+		schedule_loop(modf=modf.copy(),
+					  orderLeads=orderLeads.copy(),
+					  mfgCenters=mfgCenters.copy(),
+					  dateList=dateList.copy(),
+					  orderRunTime=orderRunTime)
+
+
+
+##### LPPPPP
+
+def schedule_loop(modf, orderLeads, mfgCenters, dateList, orderRunTime):
+	print('in schedule_loop')
+	### CREATE NEW SCHEDULE ###
+
+	# save a new copy of the modf with longest leads added
+	leadMOdf = pd.merge(modf.copy(), orderLeads[['ORDER','EarliestScheduleDate']].copy(), how='left', on='ORDER')
+	moLinesLabor = sch.pre_schedule_prep(modf=leadMOdf, mfgCenters=mfgCenters.copy())
+	outputSchedule = sch.sched_with_date_limits(orderPriority=moLinesLabor.copy(),
+	                                            dateList=dateList.copy())
+	# use the last scheduled FG in an order to save a new schedule
+	newSchedule = outputSchedule.drop_duplicates('ORDER', keep='last').copy()
+
+	### RUN THE SIM ###
+
+	# replace the schedule dates on the MO order lines with the new dates for those orders
+	newMOdf = pd.merge(modf.copy(), newSchedule[['ORDER', 'NewDate']].copy(), how='left', on='ORDER')
+	newMOdf['DATESCHEDULED'] = newMOdf['NewDate'].copy()
+	newMOdf.drop(labels='NewDate', axis=1, inplace=True)
+	# run the new MO schedule through the FB_Sim to find phantom orders
+	orderTimeline = fm.run_normal_forecast_tiers_v3(dataPath=dataPath, includeSO=False, subMO=newMOdf.copy())
+
+	### GET SCHEDULE LIMITS ###
+
+	# get a fresh list of earliest leads per order from the recent sim run
+	freshLeads = sch.get_earliest_leads(orderTimeline=orderTimeline.copy(),
+	                                    leadTimes=leadTimes.copy(),
+	                                    dateList=dateList.copy(),
+	                                    orderRunTime=orderRunTime)
+	# combine it with any previous lists to get the last schedule date per order
+	orderLeads = sch.combine_order_leads(oldLeads=orderLeads.copy(), newLeads=freshLeads.copy())
+
+	analyze_schedule(newMOdf=newMOdf, orderLeads=orderLeads)
+
+"""
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
