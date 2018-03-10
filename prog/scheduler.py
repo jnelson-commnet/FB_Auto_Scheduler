@@ -207,7 +207,7 @@ def combine_order_leads(oldLeads, newLeads):
 	return(combinedLeads.copy())
 
 #
-def analyze_schedule(newMOdf, orderLeads, modf, mfgCenters, dateList, orderRunTime):
+def analyze_schedule(newMOdf, orderLeads, modf, mfgCenters, dateList, orderRunTime, leadTimes):
 	print('in analyze_schedule')
 	tempMOdf = newMOdf.sort_values(by=['ORDER','DATESCHEDULED'], ascending=[True, True]).copy()
 	tempMOdf.drop_duplicates('ORDER', keep='first', inplace=True)
@@ -224,12 +224,13 @@ def analyze_schedule(newMOdf, orderLeads, modf, mfgCenters, dateList, orderRunTi
 					  orderLeads=orderLeads.copy(),
 					  mfgCenters=mfgCenters.copy(),
 					  dateList=dateList.copy(),
-					  orderRunTime=orderRunTime)
+					  orderRunTime=orderRunTime,
+					  leadTimes=leadTimes.copy())
 	else:
 		return(newMOdf.copy())
 
 #
-def schedule_loop(modf, orderLeads, mfgCenters, dateList, orderRunTime):
+def schedule_loop(modf, orderLeads, mfgCenters, dateList, orderRunTime, leadTimes):
 	print('in schedule_loop')
 	### CREATE NEW SCHEDULE ###
 
@@ -260,7 +261,13 @@ def schedule_loop(modf, orderLeads, mfgCenters, dateList, orderRunTime):
 	# combine it with any previous lists to get the last schedule date per order
 	orderLeads = combine_order_leads(oldLeads=orderLeads.copy(), newLeads=freshLeads.copy())
 
-	newMOdf = analyze_schedule(newMOdf=newMOdf.copy(), orderLeads=orderLeads.copy())
+	newMOdf = analyze_schedule(newMOdf=newMOdf.copy(),
+							   orderLeads=orderLeads.copy(),
+							   modf=modf.copy(),
+							   mfgCenters=mfgCenters.copy(),
+							   dateList=dateList.copy(),
+							   orderRunTime=orderRunTime,
+							   leadTimes=leadTimes.copy())
 	return(newMOdf.copy())
 
 
