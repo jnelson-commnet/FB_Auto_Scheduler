@@ -227,6 +227,7 @@ def analyze_schedule(newMOdf, orderLeads, modf, mfgCenters, dateList, orderRunTi
 					  orderRunTime=orderRunTime,
 					  leadTimes=leadTimes.copy())
 	else:
+		print('no schedule issues found')
 		return(newMOdf.copy())
 
 #
