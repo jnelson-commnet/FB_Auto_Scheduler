@@ -206,7 +206,8 @@ def combine_order_leads(oldLeads, newLeads):
 	combinedLeads.drop_duplicates('ORDER', keep='first', inplace=True)
 	return(combinedLeads.copy())
 
-#
+# checks a schedule for any orders scheduled ahead of their earliest allowed date
+# if it finds something, it runs another schedule loop and checks again until no issues are remaining
 def analyze_schedule(newMOdf, orderLeads, modf, mfgCenters, dateList, orderRunTime, leadTimes):
 	print('in analyze_schedule')
 	tempMOdf = newMOdf.sort_values(by=['ORDER','DATESCHEDULED'], ascending=[True, True]).copy()
@@ -230,7 +231,7 @@ def analyze_schedule(newMOdf, orderLeads, modf, mfgCenters, dateList, orderRunTi
 		print('no schedule issues found')
 		return(newMOdf.copy())
 
-#
+# adjusts schedule dates and runs a sim.  Uses analyze_schedule() to check its result.
 def schedule_loop(modf, orderLeads, mfgCenters, dateList, orderRunTime, leadTimes):
 	print('in schedule_loop')
 	### CREATE NEW SCHEDULE ###
