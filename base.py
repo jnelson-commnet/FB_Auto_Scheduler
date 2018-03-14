@@ -28,6 +28,7 @@ mfgCentersFilename = os.path.join(dataPath, 'MfgCenters.xlsx')
 moFilename = os.path.join(dataPath, 'MOs.xlsx')
 laborAvailFilename = os.path.join(dataPath, 'LaborAvailablePerDay.xlsx')
 leadFilename = os.path.join(dataPath, 'LeadTimes.xlsx')
+finalSchedFilename = os.path.join(homey, 'finalSchedule.xlsx')
 
 ### QUERIES ###
 
@@ -120,13 +121,13 @@ moLinesLaborKitting.drop_duplicates('ORDER', keep='last', inplace=True)
 moLinesLaborShipping.drop_duplicates('ORDER', keep='last', inplace=True)
 moLinesLaborCableAssy.drop_duplicates('ORDER', keep='last', inplace=True)
 ## labor type testing
-idealSchedule = pd.concat([moLinesLaborProLine,
-		   				   moLinesLaborRacking,
-		   				   moLinesLaborPCB,
-		   				   moLinesLaborLabels,
-		   				   moLinesLaborKitting,
-		   				   moLinesLaborShipping,
-		   				   moLinesLaborCableAssy])
+idealSchedule = pd.concat([moLinesLaborProLine.copy(),
+		   				   moLinesLaborRacking.copy(),
+		   				   moLinesLaborPCB.copy(),
+		   				   moLinesLaborLabels.copy(),
+		   				   moLinesLaborKitting.copy(),
+		   				   moLinesLaborShipping.copy(),
+		   				   moLinesLaborCableAssy.copy()])
 # use the last scheduled FG in an order to save an ideal schedule
 idealSchedule = moLinesLabor.drop_duplicates('ORDER', keep='last')
 
@@ -148,29 +149,33 @@ orderLeads = sch.get_earliest_leads(orderTimeline=orderTimeline.copy(),
 
 ### ANALYZE AND ADJUST SCHEDULE ###
 
-sch.analyze_schedule(newMOdf=newMOdf.copy(),
-					 orderLeads=orderLeads.copy(),
-					 modf=modf.copy(),
-					 mfgCenters=mfgCenters.copy(),
-					 dateList=dateList.copy(),
-					 orderRunTime=orderRunTime,
-					 leadTimes=leadTimes.copy())
-
-##labor type testing
-# sch.analyze_schedule_labor_types(newMOdf=newMOdf.copy(),
+# sch.analyze_schedule(newMOdf=newMOdf.copy(),
 # 					 orderLeads=orderLeads.copy(),
 # 					 modf=modf.copy(),
 # 					 mfgCenters=mfgCenters.copy(),
 # 					 dateList=dateList.copy(),
 # 					 orderRunTime=orderRunTime,
-# 					 leadTimes=leadTimes.copy(),
-# 					 dateListProLine=dateListProLine.copy(),
-# 					 dateListRacking=dateListRacking.copy(),
-# 					 dateListPCB=dateListPCB.copy(),
-# 					 dateListLabels=dateListLabels.copy(),
-# 					 dateListKitting=dateListKitting.copy(),
-# 					 dateListShipping=dateListShipping.copy(),
-# 					 dateListCableAssy=dateListCableAssy.copy())
+# 					 leadTimes=leadTimes.copy())
 
+##labor type testing
+finalSchedule = sch.analyze_schedule_labor_types(newMOdf=newMOdf.copy(),
+												 orderLeads=orderLeads.copy(),
+												 modf=modf.copy(),
+												 mfgCenters=mfgCenters.copy(),
+												 dateList=dateList.copy(),
+												 orderRunTime=orderRunTime,
+												 leadTimes=leadTimes.copy(),
+												 dateListProLine=dateListProLine.copy(),
+												 dateListRacking=dateListRacking.copy(),
+												 dateListPCB=dateListPCB.copy(),
+												 dateListLabels=dateListLabels.copy(),
+												 dateListKitting=dateListKitting.copy(),
+												 dateListShipping=dateListShipping.copy(),
+												 dateListCableAssy=dateListCableAssy.copy())
+
+# save a copy of the schedule to excel
+writer = pd.ExcelWriter(finalSchedFilename)
+finalSchedule.to_excel(writer, 'timeline')
+writer.save()
 
 print('end of the lines')

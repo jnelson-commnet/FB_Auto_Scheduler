@@ -21,7 +21,7 @@ Project steps:
 5. Create loop to repeat steps 2 thru 4.
 	1. (Done) Create a loop that will create a schedule, run it, and check for issues.  It should continue looping until no schedule problems are remaining.
 6. Add differentiation for labor type.
-	1. Split the existing scheduling method to schedule work by mfg center.
+	1. (Done) Split the existing scheduling method to schedule work by mfg center.
 7. Add analysis of and rescheduling for internal production shortages.
 	1. Start considering parts made in house for shortage timing as well.
 	2. Use the findings to reschedule mfg centers.

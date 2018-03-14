@@ -287,11 +287,13 @@ def analyze_schedule_labor_types(newMOdf, orderLeads, modf, mfgCenters, dateList
 	checkSched['TimeDiff'] = np.nan
 	# need to convert 'DATESCHEDULED' column to datetime or it will register as a float and error out in comparison
 	checkSched['DATESCHEDULED'] = pd.to_datetime(checkSched['DATESCHEDULED'].copy())
+	# if there are any instances where a line is scheduled before it's supposed to, set a value to the TimeDiff column
 	for each in range(0, len(checkSched)):
 	    if checkSched['DATESCHEDULED'].iat[each] < checkSched['EarliestScheduleDate'].iat[each]:
 	        checkSched['TimeDiff'] = 'here'
 	        print(checkSched['ORDER'].iat[each])
-	if len(checkSched.dropna()) != 0:
+	# if there is a value set to the TimeDiff column, then the schedule loop needs to run again
+	if len(checkSched['TimeDiff'].dropna()) != 0:
 		newMOdf = schedule_loop_labor_types(modf=modf.copy(),
 								  orderLeads=orderLeads.copy(),
 								  mfgCenters=mfgCenters.copy(),
@@ -305,10 +307,11 @@ def analyze_schedule_labor_types(newMOdf, orderLeads, modf, mfgCenters, dateList
 								  dateListKitting=dateListKitting.copy(),
 								  dateListShipping=dateListShipping.copy(),
 								  dateListCableAssy=dateListCableAssy.copy())
+		# return the scheduled orders
+		return(newMOdf.copy())
 	else:
 		print('no schedule issues found')
 		return(newMOdf.copy())
-	return(newMOdf.copy())
 
 # adjusts schedule dates and runs a sim.  Uses analyze_schedule() to check its result.
 def schedule_loop_labor_types(modf, orderLeads, mfgCenters, dateList, orderRunTime, leadTimes, dateListProLine, dateListRacking, dateListPCB, dateListLabels, dateListKitting, dateListShipping, dateListCableAssy):
