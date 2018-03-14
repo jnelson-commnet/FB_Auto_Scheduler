@@ -365,7 +365,7 @@ def run_normal_forecast_tiers_v3(dataPath,
 
     normal_orders = [datalist[0], datalist[1]]  # newordersdf, invdf
     invdf = datalist[1]
-    startinginvdf = datalist[1].copy() # invdf is going to change throughout, this is a reference for adding and inventory counter to the timeline later
+    startinginvdf = datalist[1].copy() # invdf is going to change throughout, this is a reference for adding an inventory counter to the timeline later
     bomsdf = datalist[2]
     mypartsdf = gather_parts(dataPath=dataPath)
 

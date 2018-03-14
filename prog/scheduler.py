@@ -28,9 +28,11 @@ def labor_total(orderLabor, usedLabor, extraLabor):
 # This function creates a table of dates with labor availability.
 #### HEY! dailyLabor is an arbitrary labor estimate hard coded!
 #### This should be replaced by either an input that can be adjusted or maybe even a sheet that accounts for PTO and stuff.
-def create_date_list(dailyLabor=10):
+def create_date_list(todayTimestamp=pd.Timestamp.today(), dailyLabor=10):
 	# create a list of dates starting with today.
-	dateList = pd.DataFrame({'StartDate': pd.date_range(pd.Timestamp.today(), periods=2000, freq='1D'), 'DaysFromStart': np.nan, 'AvailableLabor': np.nan})
+	dateList = pd.DataFrame({'StartDate': pd.date_range(todayTimestamp, periods=2000, freq='1D'),
+							 'DaysFromStart': np.nan,
+							 'AvailableLabor': np.nan})
 
 	# add a column with integers representing the day of the week. (0 is monday, 1 is tuesday ....)
 	dateList['weekday'] = pd.DatetimeIndex(dateList['StartDate']).dayofweek
@@ -70,7 +72,7 @@ def pre_schedule_prep(modf, mfgCenters):
 	mfgCenters.rename(columns={'Part':'PART'}, inplace=True)
 
 	# adding centers and labor estimates to MO lines
-	moLinesLabor = pd.merge(moFgOnly.copy(), mfgCenters.copy(), how='left', on='PART')
+	moLinesLabor = pd.merge(moFgOnly.copy(), mfgCenters[['PART','Mfg Center','Setup','LaborPer']].copy(), how='left', on='PART')
 
 	# save missing info for later.  Will want user to see what items were missed for lack of data.
 	missingCenters = moLinesLabor[moLinesLabor['Mfg Center'].isnull()].copy()
@@ -89,6 +91,7 @@ def pre_schedule_prep(modf, mfgCenters):
 	
 
 # create a new schedule based on the current MO dates and available labor by date
+### replacing this with sched_with_date_limits.  It does the same thing but needs an earliest schedule date column to check.
 def run_auto_schedule(moLinesLabor, dateList):
 	# calculate cumulative labor needed for builds in their current date order
 	moLinesLabor['CumulativeLaborRequired'] = np.nan
@@ -170,7 +173,7 @@ def sched_with_date_limits(orderPriority, dateList):
 #	it would require dividing required labor by the average available labor per day.
 def get_earliest_leads(orderTimeline, leadTimes, dateList, orderRunTime=7):
 	# get a list of phantom orders and their grandparent orders
-	### Currently phantom orders are placed a day before the order with the shortage will finish.  So
+	### Currently phantom orders are placed a day before the order (with the shortage) will finish.  So
 	###     if the lead time field is used later, this could throw the phantom schedule dates.  I'll
 	###     try to avoid this by getting back to the shortage date, but it might become redundant later.
 	phantoms = orderTimeline[orderTimeline['ITEM'] == 'Phantom'].copy()
@@ -273,7 +276,112 @@ def schedule_loop(modf, orderLeads, mfgCenters, dateList, orderRunTime, leadTime
 	return(newMOdf.copy())
 
 
+# Trying something with multiple labor types, not totally into this though.  requires hard coding each type.
+def analyze_schedule_labor_types(newMOdf, orderLeads, modf, mfgCenters, dateList, orderRunTime, leadTimes, dateListProLine, dateListRacking, dateListPCB, dateListLabels, dateListKitting, dateListShipping, dateListCableAssy):
+	print('in analyze_schedule')
+	tempMOdf = newMOdf.sort_values(by=['ORDER','DATESCHEDULED'], ascending=[True, True]).copy()
+	tempMOdf.drop_duplicates('ORDER', keep='first', inplace=True)
+	checkSched = pd.merge(tempMOdf[['ORDER','DATESCHEDULED']].copy(),
+						  orderLeads[['ORDER','EarliestScheduleDate']].copy(),
+						  how='left', on='ORDER')
+	checkSched['TimeDiff'] = np.nan
+	# need to convert 'DATESCHEDULED' column to datetime or it will register as a float and error out in comparison
+	checkSched['DATESCHEDULED'] = pd.to_datetime(checkSched['DATESCHEDULED'].copy())
+	for each in range(0, len(checkSched)):
+	    if checkSched['DATESCHEDULED'].iat[each] < checkSched['EarliestScheduleDate'].iat[each]:
+	        checkSched['TimeDiff'] = 'here'
+	        print(checkSched['ORDER'].iat[each])
+	if len(checkSched.dropna()) != 0:
+		newMOdf = schedule_loop_labor_types(modf=modf.copy(),
+								  orderLeads=orderLeads.copy(),
+								  mfgCenters=mfgCenters.copy(),
+								  dateList=dateList.copy(),
+								  orderRunTime=orderRunTime,
+								  leadTimes=leadTimes.copy(),
+								  dateListProLine=dateListProLine.copy(),
+								  dateListRacking=dateListRacking.copy(),
+								  dateListPCB=dateListPCB.copy(),
+								  dateListLabels=dateListLabels.copy(),
+								  dateListKitting=dateListKitting.copy(),
+								  dateListShipping=dateListShipping.copy(),
+								  dateListCableAssy=dateListCableAssy.copy())
+	else:
+		print('no schedule issues found')
+		return(newMOdf.copy())
+	return(newMOdf.copy())
 
+# adjusts schedule dates and runs a sim.  Uses analyze_schedule() to check its result.
+def schedule_loop_labor_types(modf, orderLeads, mfgCenters, dateList, orderRunTime, leadTimes, dateListProLine, dateListRacking, dateListPCB, dateListLabels, dateListKitting, dateListShipping, dateListCableAssy):
+	print('in schedule_loop')
+	### CREATE NEW SCHEDULE ###
+
+	# save a new copy of the modf with longest leads added
+	leadMOdf = pd.merge(modf.copy(), orderLeads[['ORDER','EarliestScheduleDate']].copy(), how='left', on='ORDER')
+	moLinesLabor = pre_schedule_prep(modf=leadMOdf, mfgCenters=mfgCenters.copy())
+
+	outputScheduleProLine = sched_with_date_limits(orderPriority=moLinesLabor[moLinesLabor['Mfg Center'] == 'Pro Line'].copy(), dateList=dateListProLine.copy())
+	outputScheduleRacking = sched_with_date_limits(orderPriority=moLinesLabor[moLinesLabor['Mfg Center'] == 'Racking'].copy(), dateList=dateListRacking.copy())
+	outputSchedulePCB = sched_with_date_limits(orderPriority=moLinesLabor[moLinesLabor['Mfg Center'] == 'PCB'].copy(), dateList=dateListPCB.copy())
+	outputScheduleLabels = sched_with_date_limits(orderPriority=moLinesLabor[moLinesLabor['Mfg Center'] == 'Labels'].copy(), dateList=dateListLabels.copy())
+	outputScheduleKitting = sched_with_date_limits(orderPriority=moLinesLabor[moLinesLabor['Mfg Center'] == 'Kitting'].copy(), dateList=dateListKitting.copy())
+	outputScheduleShipping = sched_with_date_limits(orderPriority=moLinesLabor[moLinesLabor['Mfg Center'] == 'Shipping'].copy(), dateList=dateListShipping.copy())
+	outputScheduleCableAssy = sched_with_date_limits(orderPriority=moLinesLabor[moLinesLabor['Mfg Center'] == 'Cable Assembly'].copy(), dateList=dateListCableAssy.copy())
+
+	outputScheduleProLine.drop_duplicates('ORDER', keep='last', inplace=True)
+	outputScheduleRacking.drop_duplicates('ORDER', keep='last', inplace=True)
+	outputSchedulePCB.drop_duplicates('ORDER', keep='last', inplace=True)
+	outputScheduleLabels.drop_duplicates('ORDER', keep='last', inplace=True)
+	outputScheduleKitting.drop_duplicates('ORDER', keep='last', inplace=True)
+	outputScheduleShipping.drop_duplicates('ORDER', keep='last', inplace=True)
+	outputScheduleCableAssy.drop_duplicates('ORDER', keep='last', inplace=True)
+
+	newSchedule = pd.concat([outputScheduleProLine,
+		   				   	 outputScheduleRacking,
+		   				   	 outputSchedulePCB,
+		   				   	 outputScheduleLabels,
+		   				   	 outputScheduleKitting,
+		   				   	 outputScheduleShipping,
+		   				   	 outputScheduleCableAssy])
+
+	# outputSchedule = sched_with_date_limits(orderPriority=moLinesLabor.copy(),
+	#                                             dateList=dateList.copy())
+	# use the last scheduled FG in an order to save a new schedule
+	# newSchedule = outputSchedule.drop_duplicates('ORDER', keep='last').copy()
+
+	### RUN THE SIM ###
+
+	# replace the schedule dates on the MO order lines with the new dates for those orders
+	newMOdf = pd.merge(modf.copy(), newSchedule[['ORDER', 'NewDate']].copy(), how='left', on='ORDER')
+	newMOdf['DATESCHEDULED'] = newMOdf['NewDate'].copy()
+	newMOdf.drop(labels='NewDate', axis=1, inplace=True)
+	# run the new MO schedule through the FB_Sim to find phantom orders
+	orderTimeline = fm.run_normal_forecast_tiers_v3(dataPath=dataPath, includeSO=False, subMO=newMOdf.copy())
+
+	### GET SCHEDULE LIMITS ###
+
+	# get a fresh list of earliest leads per order from the recent sim run
+	freshLeads = get_earliest_leads(orderTimeline=orderTimeline.copy(),
+	                                    leadTimes=leadTimes.copy(),
+	                                    dateList=dateList.copy(),
+	                                    orderRunTime=orderRunTime)
+	# combine it with any previous lists to get the last schedule date per order
+	orderLeads = combine_order_leads(oldLeads=orderLeads.copy(), newLeads=freshLeads.copy())
+
+	newMOdf = analyze_schedule_labor_types(newMOdf=newMOdf.copy(),
+										   orderLeads=orderLeads.copy(),
+										   modf=modf.copy(),
+										   mfgCenters=mfgCenters.copy(),
+										   dateList=dateList.copy(),
+										   orderRunTime=orderRunTime,
+										   leadTimes=leadTimes.copy(),
+										   dateListProLine=dateListProLine.copy(),
+										   dateListRacking=dateListRacking.copy(),
+										   dateListPCB=dateListPCB.copy(),
+										   dateListLabels=dateListLabels.copy(),
+										   dateListKitting=dateListKitting.copy(),
+										   dateListShipping=dateListShipping.copy(),
+										   dateListCableAssy=dateListCableAssy.copy())
+	return(newMOdf.copy())
 
 
 

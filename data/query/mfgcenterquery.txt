@@ -1,0 +1,75 @@
+SELECT PART.NUM as "Part",
+        BOM.NUM as "BOM",
+        CSPRODCENTER.INFO as "Mfg Center",
+        CSKITSETUP.INFO as "Setup",
+        CSKITMULT.INFO as "Kit Mult",
+        CSASSYMULT.INFO as "Assy Mult",
+        CSTESTMULT.INFO as "Test Mult",
+        CSPACKMULT.INFO as "Pack Mult",
+        CSMACH1.INFO as "Machine 1",
+        CSMACH1SETUP.INFO as "Machine 1 Setup",
+        CSMACH1MULT.INFO as "Machine 1 Mult",
+        CSMACH2.INFO as "Machine 2",
+        CSMACH2SETUP.INFO as "Machine 2 Setup",
+        CSMACH2MULT.INFO as "Machine 2 Mult",
+        CSASSYMULT.INFO as "LaborPer"
+
+
+FROM PART
+        left join BOM on PART.DEFAULTBOMID = BOM.ID
+        left join (SELECT *
+                    FROM CUSTOMSET
+                    WHERE CUSTOMSET.CUSTOMFIELDID = 64)
+            as CSMAKEBUY on PART.ID = CSMAKEBUY.RECORDID
+        left join (SELECT *
+                    FROM CUSTOMSET
+                    WHERE CUSTOMSET.CUSTOMFIELDID = 111)
+            as CSPRODCENTER on BOM.ID = CSPRODCENTER.RECORDID
+        left join (SELECT *
+                    FROM CUSTOMDECIMAL
+                    WHERE CUSTOMDECIMAL.CUSTOMFIELDID = 45)
+            as CSKITSETUP on BOM.ID = CSKITSETUP.RECORDID
+        left join (SELECT *
+                    FROM CUSTOMDECIMAL
+                    WHERE CUSTOMDECIMAL.CUSTOMFIELDID = 46)
+            as CSKITMULT on BOM.ID = CSKITMULT.RECORDID
+        left join (SELECT *
+                    FROM CUSTOMDECIMAL
+                    WHERE CUSTOMDECIMAL.CUSTOMFIELDID = 102)
+            as CSASSYMULT on BOM.ID = CSASSYMULT.RECORDID
+        left join (SELECT *
+                    FROM CUSTOMDECIMAL
+                    WHERE CUSTOMDECIMAL.CUSTOMFIELDID = 47)
+            as CSTESTMULT on BOM.ID = CSTESTMULT.RECORDID
+        left join (SELECT *
+                    FROM CUSTOMDECIMAL
+                    WHERE CUSTOMDECIMAL.CUSTOMFIELDID = 48)
+            as CSPACKMULT on BOM.ID = CSPACKMULT.RECORDID
+        left join (SELECT *
+                    FROM CUSTOMSET
+                    WHERE CUSTOMSET.CUSTOMFIELDID = 104)
+            as CSMACH1 on BOM.ID = CSMACH1.RECORDID
+        left join (SELECT *
+                    FROM CUSTOMDECIMAL
+                    WHERE CUSTOMDECIMAL.CUSTOMFIELDID = 105)
+            as CSMACH1SETUP on BOM.ID = CSMACH1SETUP.RECORDID
+        left join (SELECT *
+                    FROM CUSTOMDECIMAL
+                    WHERE CUSTOMDECIMAL.CUSTOMFIELDID = 108)
+            as CSMACH1MULT on BOM.ID = CSMACH1MULT.RECORDID
+        left join (SELECT *
+                    FROM CUSTOMSET
+                    WHERE CUSTOMSET.CUSTOMFIELDID = 106)
+            as CSMACH2 on BOM.ID = CSMACH2.RECORDID
+        left join (SELECT *
+                    FROM CUSTOMDECIMAL
+                    WHERE CUSTOMDECIMAL.CUSTOMFIELDID = 107)
+            as CSMACH2SETUP on BOM.ID = CSMACH2SETUP.RECORDID
+        left join (SELECT *
+                    FROM CUSTOMDECIMAL
+                    WHERE CUSTOMDECIMAL.CUSTOMFIELDID = 109)
+            as CSMACH2MULT on BOM.ID = CSMACH2MULT.RECORDID
+
+
+WHERE CSMAKEBUY.INFO = "Make"
+                    

@@ -1,0 +1,21 @@
+SELECT PART.NUM as "PART",
+       CSMAKEBUY.INFO as "Make/Buy",
+       PARTCOST.AVGCOST as "AvgCost",
+       VENDORPARTS.LEADTIME as "VendorLeadTime",
+       VENDORPARTS.DEFAULTFLAG as "DefaultVendor",
+       VENDORPARTS.LASTDATE as "LastDate",
+       CSLEADTIME.INFO as "RealLeadTime"
+
+FROM PART
+    left join PARTCOST on PART.ID = PARTCOST.PARTID
+    left join VENDORPARTS on PART.ID = VENDORPARTS.PARTID
+    left join (SELECT * 
+               FROM CUSTOMINTEGER 
+               WHERE CUSTOMINTEGER.CUSTOMFIELDID = 65)
+         as CSLEADTIME on CSLEADTIME.RECORDID = PART.ID
+    left join (SELECT *
+               FROM CUSTOMSET
+               WHERE CUSTOMSET.CUSTOMFIELDID = 64)
+         as CSMAKEBUY on CSMAKEBUY.RECORDID = PART.ID
+
+WHERE CSMAKEBUY.INFO = 'Buy'

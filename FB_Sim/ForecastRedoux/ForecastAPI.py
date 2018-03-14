@@ -4,9 +4,9 @@ import os
 import sys
 
 # Live server:
-sys.path.insert(0, 'Z:\Python projects\FishbowlAPITestProject')
+# sys.path.insert(0, 'Z:\Python projects\FishbowlAPITestProject')
 # Test server:
-# sys.path.insert(0, 'Z:\Python projects\FB_API_TestServer')
+sys.path.insert(0, 'Z:\Python projects\FB_API_TestServer')
 
 # import connecttest
 
