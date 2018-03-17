@@ -72,4 +72,5 @@ FROM PART
 
 
 WHERE CSMAKEBUY.INFO = "Make"
+        and BOM.ACTIVEFLAG = true
                     

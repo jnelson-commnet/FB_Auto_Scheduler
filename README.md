@@ -28,3 +28,5 @@ Project steps:
 8. Use sales priority.
 	1. Create method of retrieving SO priority and labor data.
 	2. Use that data to reschedule work and purchases for sales targets.
+9. Improve ability to schedule partials.
+	1. Add a field to account for work complete on open orders.
