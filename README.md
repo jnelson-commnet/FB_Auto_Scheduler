@@ -30,3 +30,11 @@ Project steps:
 	2. Use that data to reschedule work and purchases for sales targets.
 9. Improve ability to schedule partials.
 	1. Add a field to account for work complete on open orders.
+10. Create a summary of the result.
+	1. Produce a clear schedule by production area.
+	2. Create a report to show unused labor.
+	3. Use the schedule to discover bottlenecks in production.
+	4. Look for POs to target for expediting.
+	5. Report excess inventory purchased or built. (e.g. extra parts purchased on longer lead time for lower cost.)
+	6. Create a forecasted analysis of possible cost compared to revenue possible.
+	7. Add a check for unused/non-moving inventory.

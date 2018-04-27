@@ -100,6 +100,7 @@ dateListCableAssy = sch.create_date_list(todayTimestamp=todayTimestamp, dailyLab
 preppedMOdf = sch.pre_schedule_prep(modf=modf.copy(), mfgCenters=mfgCenters.copy())
 # add an empty datetime column
 #   - this allows the use of the same scheduling formula throughout the script
+#### not sure if this is actually being used yet.  Probably need to change from sch.run_auto_schedule to sch.sched_with_date_limits.
 preppedMOdf['EarliestScheduleDate'] = np.nan
 preppedMOdf['EarliestScheduleDate'] = pd.to_datetime(preppedMOdf['EarliestScheduleDate'])
 # run the auto schedule to get an ideal schedule by priority

@@ -224,12 +224,13 @@ def analyze_schedule(newMOdf, orderLeads, modf, mfgCenters, dateList, orderRunTi
 	        checkSched['TimeDiff'] = 'here'
 	        print(checkSched['ORDER'].iat[each])
 	if len(checkSched.dropna()) != 0:
-		schedule_loop(modf=modf.copy(),
-					  orderLeads=orderLeads.copy(),
-					  mfgCenters=mfgCenters.copy(),
-					  dateList=dateList.copy(),
-					  orderRunTime=orderRunTime,
-					  leadTimes=leadTimes.copy())
+		newMOdf = schedule_loop(modf=modf.copy(),
+								orderLeads=orderLeads.copy(),
+								mfgCenters=mfgCenters.copy(),
+								dateList=dateList.copy(),
+								orderRunTime=orderRunTime,
+								leadTimes=leadTimes.copy())
+		return(newMOdf.copy())
 	else:
 		print('no schedule issues found')
 		return(newMOdf.copy())

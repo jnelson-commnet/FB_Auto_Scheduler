@@ -1,0 +1,31 @@
+select
+    wo.num as "ORDER",
+    mo.num as "ITEM",
+    case
+        when woitem.typeid = 30
+        then 'Raw Good'
+        when woitem.typeid = 31
+        then 'Finished Good'
+        else bomitemtype.name
+    end as "ORDERTYPE",
+    part.num as "PART",
+    case
+        when woitem.typeid in(20, 30)
+        then (-1 * woitem.qtytarget)
+        else woitem.qtytarget
+    end as "QTYREMAINING",
+    wo.datescheduled as "DATESCHEDULED",
+    wo.num as "PARENT",
+    mo.id as "MOID"
+from
+    woitem
+    left join wo on woitem.woid = wo.id
+    left join part on woitem.partid = part.id
+    left join bomitemtype on woitem.typeid = bomitemtype.id
+    left join moitem on woitem.moitemid = moitem.id
+    left join mo on moitem.moid = mo.id
+where
+    part.typeid = 10
+    and woitem.woid in(select wo.id
+                   from wo left join moitem on wo.moitemid = moitem.id
+                   where wo.statusid in(10,20,30) and woitem.typeid in(10,20,30,31))

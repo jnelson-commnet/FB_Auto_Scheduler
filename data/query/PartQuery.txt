@@ -1,0 +1,11 @@
+Select
+        PART.NUM as "PART",
+        customset.info as "Make/Buy",
+        partcost.avgcost as "AvgCost"
+from
+	part
+	left join partcost on part.id = partcost.partid
+        left join customset on part.id = customset.recordid
+where
+        customset.customfieldid = 64
+	and PART.TYPEID = 10

@@ -1,0 +1,28 @@
+select
+        so.num as "ORDER",
+        soitem.solineitem as "ITEM",
+        case
+                when soitem.typeid = 10
+                then soitemtype.name
+                else (concat('SO ', soitemtype.name))
+        end as "ORDERTYPE",
+        part.num as "PART",
+        case
+                when soitem.typeid = 10
+                then (-1 * (soitem.qtytofulfill - soitem.qtyfulfilled))
+                else (soitem.qtytofulfill -soitem.qtyfulfilled)
+        end as "QTYREMAINING",
+        soitem.datescheduledfulfillment as "DATESCHEDULED",
+        so.num as "PARENT"
+from
+        so
+        left join soitem on soitem.soid = so.id
+        left join soitemtype on soitem.typeid = soitemtype.id
+        left join product on soitem.productid = product.id
+        left join part on product.partid = part.id
+        left join sostatus on so.statusid = sostatus.id
+where
+        so.statusid in(20, 25)
+        and PART.TYPEID = 10
+        and soitem.typeid in(10,20)
+        and soitem.statusid in(10,11,12,14,20,30,40)
