@@ -128,6 +128,15 @@ invDF = pd.read_excel(invFilename, header=0)
 
 # save current labor availability
 laborDF = pd.read_excel(laborAvailFilename, header=0)
+# use this laborDF to create a dictionary of dateLists with production centers as the keys.
+# the dateLists will be used to track labor available at a given time.
+dateListDict = {}
+todayTimestamp = pd.Timestamp.today()
+for x in range(0, len(laborDF)):
+	labType = laborDF['LaborType'].iat[x]
+	hoursPerDay = laborDF['HoursPerDay'].iat[x]
+	centerDateList = sch.create_date_list(todayTimestamp=todayTimestamp, dailyLabor=hoursPerDay)
+	dateListDict[labType] = centerDateList.copy()
 
 # save current parts list - doubt this is needed, maybe combine with something else like desc and avgcost
 partDF = pd.read_excel(partFilename, header=0)
@@ -231,6 +240,7 @@ while x < len(orderPriority):
 	currentInvSum.groupby('PART').sum()
 	negativeInv = currentInvSum[currentInvSum['INV'] < 0]
 	if len(negativeInv) > 0: # if any inventory lines are negative, this will be true
+		print(negativeInv)
 		True = False # I think this will throw an error
 
 
