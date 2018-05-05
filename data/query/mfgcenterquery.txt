@@ -1,4 +1,4 @@
-SELECT PART.NUM as "Part",
+SELECT PART.NUM as "PART",
         BOM.NUM as "BOM",
         CSPRODCENTER.INFO as "Mfg Center",
         CSKITSETUP.INFO as "Setup",

@@ -152,10 +152,28 @@ poDF = pd.read_excel(poFilename, header=0)
 
 # need a list of orders and way to prioritize them, can be handled a few ways.
 # for now we'll just pretend that the SOs and MOs are coming in order of priority already.
-
+# the orderPriority list needs to carry the MfgCenter responsible for the order and labor required.
+# SOs all require shipping so start with that ...
 soPriority = soDF.drop_duplicates('ORDER', keep='first').copy()
-moPriority = moDF.drop_duplicates('ORDER', keep='first').copy()
+soPriority = soPriority[['ORDER','DATESCHEDULED']].copy()
+soPriority['MfgCenter'] = 'Shipping' # assigning all to shipping dept
+# HEY THIS IS WEIRD, it's a hard coded labor required per SO.
+# There should be some calculation of time required for each line or something to that effect.
+# For now I'm making the assumption that every SO requires 1 hour of shipping labor to fulfill.
+shipLaborRequired = 1
+soPriority['LaborRequired'] = shipLaborRequired
+# now we need to get each WO with MfgCenter and labor required
+moPriority = moDF[moDF['QTYREMAINING'] > 0].copy() # reducing WO lines to positive quantities, probably all FGs
+moPriority = pd.merge(moPriority.copy(), mfgCenters[['PART','MfgCenter','LaborPer']].copy(), how='left', on='PART') # attach labor info where possible
+moPriority['LaborRequired'] = moPriority['LaborPer'] * moPriority['QTYREMAINING'] # calculate labor for order
+moPriority.sort_values(by='LaborRequired', ascending=False, inplace=True) # bring highest labor to top
+moPriority.drop_duplicates('ORDER', keep='first', inplace=True) # drop duplicate order lines and keep highest labor available
+# HEY THIS IS WEIRD, sorting by datescheduled for priority is arbitrary, Fix it!
+moPriority.sort_values(by='DATESCHEDULED', ascending=True, inplace=True)
+moPriority = moPriority[['PART','DATESCHEDULED','MfgCenter','LaborRequired']].copy()
+# now create order priority by appending SO and MO
 orderPriority = soPriority.copy().append(moDF.copy())
+scheduledOrders = pd.dataFrame() # this will store anything scheduled and removed from orderPriority
 
 # create a dataFrame for tracking earliest start date allowed limitations
 earliestDateAllowed = pd.DataFrame(columns=['ORDER','startDateLimit'])
@@ -188,8 +206,8 @@ Save Starting Inventory for reference
 # make items discover their dependencies before finding earliest schedule dates
 # so all of the dependencies will be worked out before this lead time issue comes up.
 
-scheduledOrders = poDF.copy() # the POs are already scheduled, so list them in scheduled orders
-unScheduledOrders = soDF.copy().append(moDF.copy()) # all SOs and MOs are unscheduled to start and they are in orderPriority as well
+scheduledLines = poDF.copy() # the POs are already scheduled, so list them in scheduled orders
+unscheduledLines = soDF.copy().append(moDF.copy()) # all SO and MO lines are unscheduled to start and they are in orderPriority as well
 
 # if the last loop didn't end up in a schedule success, then add in
 # an order called labor gap.  It will bump the attempted schedule date
@@ -216,12 +234,14 @@ while len(orderPriority) > 0:
 			### calculate expected labor gap for first orders production area
 			### add labor gap as a scheduled order for its production area
 	# run the next order schedule attempt, if the previous run's success was false, then a labor gap filler should make this run successful.
-	orderPriority, scheduledOrders, unScheduledOrders, scheduleSuccess, earliestDateAllowed, dependencies = function_below(orderPriority,
-																											 			   scheduledOrders,
-																											 			   unScheduledOrders,
-																											 			   earliestDateAllowed,
-																											 			   dependencies,
-																											 			   invDF)
+	orderPriority, scheduledOrders, scheduledLines, unscheduledLines, scheduleSuccess, earliestDateAllowed, dependencies = function_below(orderPriority,
+																																		  scheduledOrders,
+																																		  scheduledLines,
+																																		  unscheduledLines,
+																																		  earliestDateAllowed,
+																																		  dependencies,
+																																		  invDF,
+																																		  dateListDict)
 
 
 # beginning of function_below()
@@ -233,7 +253,7 @@ while x < len(orderPriority):
 
 	# Check if starting inventory plus all scheduled orders results in any negatives:
 	# 	error out if true
-	currentOrderSum = scheduledOrders[['PART','QTYREMAINING']].copy().groupby('PART').sum()
+	currentOrderSum = scheduledLines[['PART','QTYREMAINING']].copy().groupby('PART').sum()
 	currentOrderSum.reset_index(inplace=True)
 	currentOrderSum.rename(columns={'QTYREMAINING':'INV'}, inplace=True)
 	currentInvSum = invDF.copy().append(currentOrderSum.copy())
@@ -244,7 +264,17 @@ while x < len(orderPriority):
 		True = False # I think this will throw an error
 
 
-	?Check first pri order for earliest available schedule time according to labor group (probably Shipping on first loop)
+	# ?Check first pri order for earliest available schedule time according to labor group (probably Shipping on first loop)
+	workCenter = orderPriority['MfgCenter'].iat[x] # production area for current order
+	laborRequired = orderPriority['LaborRequired'].iat[x] # maybe not necessary yet?
+	laborUsed = 0
+	prevSchedLabor = scheduledOrders[scheduledOrders['MfgCenter'] == workCenter].copy()
+	if len(prevSchedLabor) > 0:
+		laborUsed = prevSchedLabor['LaborRequired'].sum()
+	laborAvailable = dateListDict[workCenter].copy()
+	laborAvailable = laborAvailable[laborAvailable['AvailableLabor'] > laborUsed].copy()
+	dateAttemptStart = laborAvailable['StartDate'].iat[0] # this should be the start date this order will try to schedule
+
 
 
 	
@@ -278,7 +308,7 @@ while x < len(orderPriority):
 					place fake work order priority just above current order in priority list
 					add fake order to dependency list for current order
 			scheduleSuccess = True
-			return (orderPriority, scheduledOrders, unScheduledOrders, scheduleSuccess, earliestDateAllowed, dependencies)
+			return (orderPriority, scheduledOrders, scheduledLines, unscheduledLines, scheduleSuccess, earliestDateAllowed, dependencies)
 		# buy shortage time
 		else:
 			Lead time dates = earliest arrival based on lead time (if bought tomorrow) for all buy shortages
@@ -301,15 +331,15 @@ while x < len(orderPriority):
 				remove current order from priority list
 				remove all dependencies listed for this order
 			scheduleSuccess = True
-			return (orderPriority, scheduledOrders, unScheduledOrders, scheduleSuccess, earliestDateAllowed, dependencies)
+			return (orderPriority, scheduledOrders, scheduledLines, unscheduledLines, scheduleSuccess, earliestDateAllowed, dependencies)
 
 	else:
 		schedule first pri order
 		remove first pri order from priority list
 		remove all dependencies listed for this order
 		scheduleSuccess = True
-		return (orderPriority, scheduledOrders, unScheduledOrders, scheduleSuccess, earliestDateAllowed, dependencies)
-return (orderPriority, scheduledOrders, unScheduledOrders, scheduleSuccess, earliestDateAllowed, dependencies)
+		return (orderPriority, scheduledOrders, scheduledLines, unscheduledLines, scheduleSuccess, earliestDateAllowed, dependencies)
+return (orderPriority, scheduledOrders, scheduledLines, unscheduledLines, scheduleSuccess, earliestDateAllowed, dependencies)
 
 
 

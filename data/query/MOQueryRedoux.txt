@@ -15,8 +15,7 @@ select
         else woitem.qtytarget
     end as "QTYREMAINING",
     wo.datescheduled as "DATESCHEDULED",
-    wo.num as "PARENT",
-    mo.id as "MOID"
+    wo.num as "PARENT"
 from
     woitem
     left join wo on woitem.woid = wo.id
