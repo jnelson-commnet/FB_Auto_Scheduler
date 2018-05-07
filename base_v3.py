@@ -275,12 +275,22 @@ while x < len(orderPriority):
 	laborAvailable = laborAvailable[laborAvailable['AvailableLabor'] > laborUsed].copy()
 	dateAttemptStart = laborAvailable['StartDate'].iat[0] # this should be the start date this order will try to schedule
 
+	currentOrder = orderPriority['ORDER'].iat[x] # will need to check if there are restrictions for this order
+
+	# if there is an earliest start date limit and it's later than the attempted start,
+	# then move on to the next order in the priority list
+	orderDateLimit = earliestDateAllowed[earliestDateAllowed['ORDER'] == currentOrder].copy()
+	if len(orderDateLimit) > 0:
+		currentDateLimit = orderDateLimit['startDateLimit'].iat[0]
+		if dateAttemptStart < currentDateLimit:
+			x+=1
+			continue
 
 
-	
-	if the start date is before earliest allowed start date on earliest date list:
-		move on to next priority order
-		x+=1
+	# there might be an issue with this next section.
+	# if a dependency is scheduled for later than the current attempt,
+	# then this order can't be scheduled yet.
+	# can fix this by making any order that exists as a dependecy affect other orders' earliest start dates.
 	if there are any unscheduled dependencies on dependency list or any dependencies scheduled after current attempted date:
 		move on to next priority order
 		x+=1
