@@ -112,7 +112,7 @@ while x < len(leadTimes):
         leadTimes['LeadTimes'].iat[x] = leadTimes['RealLeadTime'].iat[x]
     elif leadTimes['VendorLeadTime'].iat[x] > 0:
         leadTimes['LeadTimes'].iat[x] = leadTimes['VendorLeadTime'].iat[x]
-    x+=1
+    x += 1
 leadTimes = leadTimes[['PART','Make/Buy','AvgCost','LeadTimes']].copy()
 ### this is a bandaid, I think there will be problems with NAN values later.  Need to figure out eventually.
 leadTimes.fillna(10, inplace=True)
@@ -173,6 +173,12 @@ moPriority.sort_values(by='DATESCHEDULED', ascending=True, inplace=True)
 moPriority = moPriority[['PART','DATESCHEDULED','MfgCenter','LaborRequired']].copy()
 # now create order priority by appending SO and MO
 orderPriority = soPriority.copy().append(moDF.copy())
+orderPriority.reset_index(drop=True, inplace=True)
+orderPriority['Priority'] = np.nan
+pri = 1
+for index in orderPriority.index:
+	orderPriority.at[index, 'Priority'] = pri
+	pri += 1
 scheduledOrders = pd.dataFrame() # this will store anything scheduled and removed from orderPriority
 
 # create a dataFrame for tracking earliest start date allowed limitations
@@ -197,7 +203,34 @@ def attempt_adjust_earliest_start_date(order, newDate, earliestDateList):
 		earliestDateList = earliestDateList.copy().append(tempDateDF.copy())
 	return earliestDateList.copy()
 
-Save Starting Inventory for reference
+# this function is for bumping priority levels higher for orders needed as dependencies
+# it will not change priority if it is already higher than the reference order
+def attempt_adjust_order_priority(adjustOrder, rootOrder, orderPriority):
+	orderPriority.reset_index(drop=True, inplace=True)
+	# get the priority levels of each order
+	adjustOrderFrame = orderPriority[orderPriority['ORDER'] == adjustOrder].copy()
+	adjustOrderPri = adjustOrderFrame['Priority'].iat[0]
+	rootOrderFrame = orderPriority[orderPriority['ORDER'] == rootOrder].copy()
+	rootOrderPri = rootOrderFrame['Priority'].iat[0].copy()
+	# if the adjustable order is lower priority (higher numerically), set it just above the root order
+	if adjustOrderPri > rootOrderPri:
+		rowIndex = orderPriority.loc[orderPriority['ORDER'] == adjustOrder].index[0]
+		orderPriority.at[rowIndex, 'Priority'] = rootOrderPri - 0.5
+		# sort the orders by priority and refresh the list to consecutive integers
+		orderPriority.sort_values('Priority', ascending=True, inplace=True)
+		pri = 1
+		for index in orderPriority.index:
+			orderPriority.at[index, 'Priority'] = pri
+			pri += 1
+		orderPriority.reset_index(drop=True, inplace=True)
+	return orderPriority.copy()
+
+# this function will add a dependency to the existing list
+def set_dependency(order, dependency, dependencyDF):
+	tempDF = pd.DataFrame({'ORDER': order,
+						   'dependency': dependecy})
+	dependencyDF = dependencyDF.copy().append(tempDF.copy())
+	return dependencyDF.copy()
 
 # beginning of loop
 
@@ -283,7 +316,7 @@ while x < len(orderPriority):
 	if len(orderDateLimit) > 0:
 		currentDateLimit = orderDateLimit['startDateLimit'].iat[0]
 		if dateAttemptStart < currentDateLimit:
-			x+=1
+			x += 1
 			continue
 
 
@@ -291,13 +324,163 @@ while x < len(orderPriority):
 	# if a dependency is scheduled for later than the current attempt,
 	# then this order can't be scheduled yet.
 	# can fix this by making any order that exists as a dependecy affect other orders' earliest start dates.
-	if there are any unscheduled dependencies on dependency list or any dependencies scheduled after current attempted date:
-		move on to next priority order
-		x+=1
-	Make an Inventory Counter:
-		Add all POs fulfilled by attempted start date
-		Add all positive order lines already scheduled by attempted start date
-		Subtract all negative order lines already scheduled, including any scheduled after attempted start date
+	orderDependencyLimit = dependencies[dependencies['ORDER'] == currentOrder].copy()
+	if len(orderDependencyLimit) > 0:
+		x += 1
+		continue
+
+	# Make an Inventory Counter:
+	# collect a sum of all scheduled positive orders up to the current schedule date
+	orderLinesToDate = scheduledLines[scheduledLines['DATESCHEDULED'] <= dateAttemptStart].copy()
+	positiveOrderLinesToDate = orderLinesToDate[orderLinesToDate['QTYREMAINING'] > 0].copy()
+	positiveOrderLinesToDate = positiveOrderLinesToDate[['PART','QTYREMAINING']].copy().groupby('PART').sum()
+	positiveOrderLinesToDate.reset_index(inplace=True)
+
+	# collect all negative orders including those scheduled later than the current attempted date
+	negativeOrderLines = scheduledLines[scheduledLines['QTYREMAINING'] < 0].copy()
+	negativeOrderLines = negativeOrderLines[['PART','QTYREMAINING']].copy().groupby('PART').sum()
+	negativeOrderLines.reset_index(inplace=True)
+
+	# add the orders to starting inventory to get a snapshot of inventory totals relevant to this schedule attempt
+	invCounter = invDF.rename(columns={'INV':'QTYREMAINING'}).copy()
+	invCounter = invCounter.copy().append(positiveOrderLinesToDate.copy().append(negativeOrderLines.copy()))
+	invCounter = invCounter.copy().groupby('PART').sum()
+	invCounter.reset_index(inplace=True)
+
+	# check to see if scheduling the order will result in shortages.
+	# note that because all negative order lines are considered by the inventory counter,
+	# there can be lines that produce a negative over what the actual current order shortage is.
+	currentOrderLines = unscheduledLines[unscheduledLines['ORDER'] == currentOrder].copy()
+	currentShortageCheck = currentOrderLines[['PART','QTYREMAINING']].copy().groupby('PART').sum()
+	currentShortageCheck.reset_index(inplace=True)
+	invShort = invCounter.copy().append(currentShortageCheck.copy())
+	invShort.groupby('PART').sum()
+	invShort.reset_index(inplace=True)
+	invShort = invShort[invShort['QTYREMAINING'] < 0].copy()
+
+	# if there are no shortages, then this order can be scheduled right now
+	if len(invShort) == 0:
+		schedule_order()
+	else:
+		# isolate the shortages common to current order lines
+		negativeOrderShort = currentShortageCheck[currentShortageCheck['QTYREMAINING'] < 0].copy()
+		negativeOrderShort.rename(columns={'QTYREMAINING':'OrderShort'}, inplace=True)
+		orderShort = pd.merge(invShort.copy(), negativeOrderShort.copy(), how='left', on='PART')
+		orderShort.dropna(inplace=True)
+		# if there aren't any inv shortages directly from this order, then it can be scheduled
+		if len(orderShort) == 0:
+			schedule_order()
+		else:
+			# choose the lesser shortage between inventory counter and order qty for each part
+			orderShort['CalcShort'] = np.nan
+			orderShort.reset_index(drop=True, inplace=True)
+			shawtyCheck = 0
+			while shawtyCheck < len(orderShort):
+				partInvShort = orderShort['QTYREMAINING'].iat[shawtyCheck]
+				partOrderShort = orderShort['OrderShort'].iat[shawtyCheck]
+				if partInvShort < partOrderShort:
+					orderShort['CalcShort'].iat[shawtyCheck] = partInvShort
+				else:
+					orderShort['CalcShort'].iat[shawtyCheck] = partOrderShort
+			shortage = orderShort[['PART','CalcShort']].copy()
+
+			shortage = pd.merge(shortage.copy(), partDF[['PART','Make/Buy']].copy(), how='left', on='PART')
+
+			# need to resolve all make shortages before you start creating fake POs
+			makeShortage = shortage[shortage['Make/Buy'] == 'Make'].copy()
+			if len(makeShortage) > 0:
+				# the scheduled positive orders before the current attempt date are considered in the shortage already
+				# so collect the future positive orders already scheduled to see if they cover the shortage
+				# and the unscheduled positive orders (sorted by priority) as well
+				futureScheduledLines = scheduledLines[scheduledLines['DATESCHEDULED'] > dateAttemptStart].copy()
+				positiveFutureScheduledLines = futureScheduledLines[futureScheduledLines['QTYREMAINING'] > 0].copy()
+				positiveUnscheduledLines = unscheduledLines[unscheduledLines['QTYREMAINING'] > 0].copy()
+				positiveUnscheduledLines = pd.merge(positiveUnscheduledLines.copy(), orderPriority[['ORDER','Priority']].copy(), how='left', on='ORDER')
+				positiveUnscheduledLines.sort_values('Priority', ascending=True, inplace=True)
+
+				for part in makeShortage['PART']:
+					# identify the first part, shortage, and relevant order lines
+					partShortage = makeShortage[makeShortage['PART'] == part].copy()
+					short = partShortage['CalcShort'].iat[0]
+					partFutureLines = positiveFutureScheduledLines[positiveFutureScheduledLines['PART'] = part].copy()
+					partUnscheduleLines = positiveUnscheduledLines[positiveUnscheduledLines['PART'] == part].copy()
+					# loop through until this part's shortage is covered
+					while short < 0:
+						# start with already scheduled future orders
+						if len(partFutureLines) > 0: # set an earliest date limit based on their schedule dates, can't adjust priority because they're scheduled
+							short = short + partFutureLines['QTYREMAINING'].iat[0]
+							earliestDateList = attempt_adjust_earliest_start_date(order=currentOrder,
+																				  newDate=partFutureLines['DATESCHEDULED'].iat[0],
+																				  earliestDateList=earliestDateList)
+							partFutureLines.drop(partFutureLines.index[0], inplace=True)
+						# move on to positive unscheduled orders
+						elif len(partUnscheduleLines) > 0: # set a dependency and bump the order priority up
+							short = short + partUnscheduleLines['QTYREMAINING'].iat[0]
+							dependencies = set_dependency(order=currentOrder,
+														  dependency=partUnscheduleLines['ORDER'].iat[0],
+														  dependencyDF=dependencies)
+							orderPriority = attempt_adjust_order_priority(adjustOrder=partUnscheduleLines['ORDER'].iat[0],
+																		  rootOrder=currentOrder,
+																		  orderPriority=orderPriority)
+							partUnscheduleLines.drop(partUnscheduleLines.index[0], inplace=True)
+						# then create fake work orders for remaining shortage
+						else: # create fake order and place priority one above current order
+							laborRef = mfgCenters[mfgCenters['PART'] == part].copy()
+							# HEY if the short is multiplied by labor required, it should consider that some BOMs create more than 1 ea of a FG
+							if len(laborRef) > 0: # hopefully there's a default BOM reference with a labor estimate
+								thisBOM = laborRef['BOM'].iat[0]
+								thisCenter = laborRef['MfgCenter'].iat[0]
+								thisLaborRequ = laborRef['LaborPer'].iat[0]
+								thisLabor = thisLaborRequ * short
+								# create fake order priority line
+								tempOrderPriority = pd.DataFrame({'ORDER': OMGPLACEHOLDER,
+																  'DATESCHEDULED': dateAttemptStart,
+																  'MfgCenter': thisCenter,
+																  'LaborRequired': thisLabor,
+																  'Priority': len(orderPriority)})
+								# add to orderPriority
+								orderPriority = orderPriority.copy().append(tempOrderPriority.copy())
+								# log it as a dependency
+								dependencies = set_dependency(order=currentOrder,
+															   dependency=OMGPLACEHOLDER,
+															   dependencyDF=dependencies)
+								# move its priority above the current order
+								orderPriority = attempt_adjust_order_priority(adjustOrder=OMGPLACEHOLDER,
+																		  	  rootOrder=currentOrder,
+																		  	  orderPriority=orderPriority)
+								# reference the bomDF to create unscheduled order lines
+								bomLines = bomDF[bomDF['BOM'] == thisBOM].copy()
+								if len(bomLines) > 0:
+									fgBomLines = bomLines[bomLines['FG'] == 10].copy()
+									fgBomLines = fgBomLines[fgBomLines['PART'] == part].copy()
+									fgQty = fgBomLines['QTY'].iat[0]
+									multiple = short / fgQty
+									bomLines['QTYREMAINING'] = bomLines['QTY'] * multiple
+									bomLines['ORDER'] = OMGPLACEHOLDER
+									bomLines['ITEM'] = 'Phantom'
+									rawGoods = bomLines[bomLines['QTYREMAINING'] <= 0].copy()
+									finishGoods = bomLines[bomLines['QTYREMAINING'] < 0].copy()
+									bomLines = finishGoods.copy().append(rawGoods.copy())
+									bomLines['DATESCHEDULED'] = dateAttemptStart
+									bomLines['PARENT'] = currentOrder
+									bomLines = bomLines[['ORDER','ITEM','ORDERTYPE','PART','QTYREMAINING','DATESCHEDULED','PARENT']].copy()
+									unscheduledLines = unscheduledLines.copy().append(bomLines.copy())
+
+
+
+									
+
+						# add new order to orderPriority with low priority then set it just above current order
+						# add new order as a dependency for the current order
+						# add new order lines to unscheduledLines, set date for attempt date for convenenience
+
+			else: # section only runs if there are exclusively Buy shortages
+
+
+
+
+
+
 
 	if first pri order makes any part negative based on Inventory Counter:
 		shortage = parts and resulting negative quantities
@@ -339,14 +522,14 @@ while x < len(orderPriority):
 				create fake POs for all negative shortages and set their fulfillment dates equal to Longest lead time date
 				schedule current order at current attempted date
 				remove current order from priority list
-				remove all dependencies listed for this order
+				remove all dependencies listed for this order (and set those dependent orders earliest dates to after this order)
 			scheduleSuccess = True
 			return (orderPriority, scheduledOrders, scheduledLines, unscheduledLines, scheduleSuccess, earliestDateAllowed, dependencies)
 
 	else:
 		schedule first pri order
 		remove first pri order from priority list
-		remove all dependencies listed for this order
+		remove all dependencies listed for this order (and set those dependent orders earliest dates to after this order)
 		scheduleSuccess = True
 		return (orderPriority, scheduledOrders, scheduledLines, unscheduledLines, scheduleSuccess, earliestDateAllowed, dependencies)
 return (orderPriority, scheduledOrders, scheduledLines, unscheduledLines, scheduleSuccess, earliestDateAllowed, dependencies)
