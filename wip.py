@@ -9,6 +9,9 @@ import numpy as np
 
 from prog import scheduler as sch
 
+from IPython.core.debugger import Tracer
+debug_here = Tracer()
+
 # save current working directory as homey
 homey = os.path.abspath(os.path.dirname(__file__))
 # homey = os.getcwd() # works in jupyter notebook
@@ -104,6 +107,7 @@ mfgCenters = pd.read_excel(mfgCentersFilename, header=0)
 
 # save current Manufacture Orders
 moDF = pd.read_excel(moFilename, header=0)
+moDF['DATESCHEDULED'] = pd.to_datetime(moDF['DATESCHEDULED'].copy())
 
 # save lead time estimates
 leadTimes = pd.read_excel(leadFilename, header=0)
@@ -150,9 +154,11 @@ partDF = pd.read_excel(partFilename, header=0)
 
 # save current Sales Orders
 soDF = pd.read_excel(soFilename, header=0)
+soDF['DATESCHEDULED'] = pd.to_datetime(soDF['DATESCHEDULED'].copy())
 
 # save current Purchase Orders
 poDF = pd.read_excel(poFilename, header=0)
+poDF['DATESCHEDULED'] = pd.to_datetime(poDF['DATESCHEDULED'].copy())
 
 print('data retrieved')
 
@@ -188,7 +194,9 @@ pri = 1
 for index in orderPriority.index:
 	orderPriority.at[index, 'Priority'] = pri
 	pri += 1
-scheduledOrders = pd.DataFrame() # this will store anything scheduled and removed from orderPriority
+
+ordPriHeaders = list(orderPriority.copy())
+scheduledOrders = pd.DataFrame(columns=ordPriHeaders) # this will store anything scheduled and removed from orderPriority
 
 # create a dataFrame for tracking earliest start date allowed limitations
 earliestDateAllowed = pd.DataFrame(columns=['ORDER','startDateLimit'])
@@ -239,6 +247,7 @@ def order_schedule_attempt(orderPriority,
 		workCenter = orderPriority['MfgCenter'].iat[x] # production area for current order
 		laborRequired = orderPriority['LaborRequired'].iat[x] # maybe not necessary yet?
 		laborUsed = 0
+		print(workCenter)
 		prevSchedLabor = scheduledOrders[scheduledOrders['MfgCenter'] == workCenter].copy()
 		if len(prevSchedLabor) > 0:
 			laborUsed = prevSchedLabor['LaborRequired'].sum()
@@ -346,6 +355,7 @@ def order_schedule_attempt(orderPriority,
 						orderShort['CalcShort'].iat[shawtyCheck] = partInvShort
 					else:
 						orderShort['CalcShort'].iat[shawtyCheck] = partOrderShort
+					shawtyCheck += 1
 				shortage = orderShort[['PART','CalcShort']].copy()
 
 				shortage = pd.merge(shortage.copy(), partDF[['PART','Make/Buy']].copy(), how='left', on='PART')
@@ -480,7 +490,7 @@ def order_schedule_attempt(orderPriority,
 					buyShortage = pd.merge(shortage.copy(), leadTimes[['PART','LeadTimes']].copy(), how='left', on='PART')
 					buyShortage['LeadTimeDate'] = np.nan
 					for line in range(0, len(buyShortage)):
-						lead = buyShortage['LeadTimes'] + 3 # adding 3 to account for time to place and process order
+						lead = buyShortage['LeadTimes'].iat[line] + 3 # adding 3 to account for time to place and process order
 						dateOptions = referenceDateList[referenceDateList['AvailableLabor'] >= lead].copy()
 						leadDate = dateOptions['StartDate'].iat[0]
 						rowIndex = buyShortage.index[line]

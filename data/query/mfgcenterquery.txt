@@ -1,6 +1,6 @@
 SELECT PART.NUM as "PART",
         BOM.NUM as "BOM",
-        CSPRODCENTER.INFO as "Mfg Center",
+        CSPRODCENTER.INFO as "MfgCenter",
         CSKITSETUP.INFO as "Setup",
         CSKITMULT.INFO as "Kit Mult",
         CSASSYMULT.INFO as "Assy Mult",
