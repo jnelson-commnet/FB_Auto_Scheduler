@@ -12,6 +12,12 @@ from prog import scheduler as sch
 from IPython.core.debugger import Tracer
 debug_here = Tracer()
 
+import logging
+
+logging.basicConfig(filename='example.log',level=logging.DEBUG)
+logging.debug('---------------------------------------------------------------------------------------------------------')
+
+
 # save current working directory as homey
 homey = os.path.abspath(os.path.dirname(__file__))
 # homey = os.getcwd() # works in jupyter notebook
@@ -108,6 +114,7 @@ mfgCenters = pd.read_excel(mfgCentersFilename, header=0)
 # save current Manufacture Orders
 moDF = pd.read_excel(moFilename, header=0)
 moDF['DATESCHEDULED'] = pd.to_datetime(moDF['DATESCHEDULED'].copy())
+moDF['ORDER'] = moDF['ORDER'].astype(str)
 
 # save lead time estimates
 leadTimes = pd.read_excel(leadFilename, header=0)
@@ -118,23 +125,34 @@ leadTimes.drop_duplicates('PART', keep='first', inplace=True)
 leadTimes['LeadTimes'] = np.nan
 x=0
 while x < len(leadTimes):
-    if leadTimes['RealLeadTime'].iat[x] > 0:
-        leadTimes['LeadTimes'].iat[x] = leadTimes['RealLeadTime'].iat[x]
-    elif leadTimes['VendorLeadTime'].iat[x] > 0:
-        leadTimes['LeadTimes'].iat[x] = leadTimes['VendorLeadTime'].iat[x]
-    x += 1
+	logging.debug('@1')
+	if leadTimes['RealLeadTime'].iat[x] > 0:
+		logging.debug('@2')
+		leadTimes['LeadTimes'].iat[x] = leadTimes['RealLeadTime'].iat[x]
+	elif leadTimes['VendorLeadTime'].iat[x] > 0:
+		logging.debug('@3')
+		leadTimes['LeadTimes'].iat[x] = leadTimes['VendorLeadTime'].iat[x]
+	x += 1
 leadTimes = leadTimes[['PART','Make/Buy','AvgCost','LeadTimes']].copy()
 ### this is a bandaid, I think there will be problems with NAN values later.  Need to figure out eventually.
 leadTimes.fillna(10, inplace=True)
 
 # save current BOMs
 bomDF = pd.read_excel(bomFilename, header=0)
+# query brings all finished good and raw good lines as positive quanities.
+# change the raw goods to negative for easier order creating throughout
+fgBomDF = bomDF[bomDF['FG'] == 10].copy()
+rawBomDF = bomDF[bomDF['FG'] == 20].copy()
+rawBomDF['QTY'] = rawBomDF['QTY'].copy() * (-1)
+bomDF = fgBomDF.copy().append(rawBomDF.copy())
+bomDF.sort_values(by='BOM', inplace=True)
 
 # save current part descriptions
 descDF = pd.read_excel(descFilename, header=0)
 
 # save current inventory
 invDF = pd.read_excel(invFilename, header=0)
+invDF['INV'] = invDF['INV'].round(2) # just getting the floats out.
 
 # save current labor availability
 laborDF = pd.read_excel(laborAvailFilename, header=0)
@@ -143,6 +161,7 @@ laborDF = pd.read_excel(laborAvailFilename, header=0)
 dateListDict = {}
 todayTimestamp = pd.Timestamp.today()
 for x in range(0, len(laborDF)):
+	logging.debug('@4')
 	labType = laborDF['LaborType'].iat[x]
 	hoursPerDay = laborDF['HoursPerDay'].iat[x]
 	centerDateList = sch.create_date_list(todayTimestamp=todayTimestamp, dailyLabor=hoursPerDay)
@@ -155,12 +174,23 @@ partDF = pd.read_excel(partFilename, header=0)
 # save current Sales Orders
 soDF = pd.read_excel(soFilename, header=0)
 soDF['DATESCHEDULED'] = pd.to_datetime(soDF['DATESCHEDULED'].copy())
+soDF['ORDER'] = soDF['ORDER'].astype(str)
 
 # save current Purchase Orders
 poDF = pd.read_excel(poFilename, header=0)
 poDF['DATESCHEDULED'] = pd.to_datetime(poDF['DATESCHEDULED'].copy())
+poDF.sort_values(by='DATESCHEDULED', ascending=True, inplace=True) # not necessary but easier for debug
+poDF['ORDER'] = poDF['ORDER'].astype(str)
 
 print('data retrieved')
+
+
+# fakeOrderIter is used to create fake orders throughout the script
+fakeOrderIter = 0
+
+# these are Series used to track missing labor info and BOMs
+missingLabor = pd.DataFrame(data={'PART':[]})
+missingBOM = pd.DataFrame(data={'PART':[]})
 
 
 ### Sort Orders by Priority ###
@@ -180,20 +210,35 @@ soPriority['LaborRequired'] = shipLaborRequired
 # now we need to get each WO with MfgCenter and labor required
 moPriority = moDF[moDF['QTYREMAINING'] > 0].copy() # reducing WO lines to positive quantities, probably all FGs
 moPriority = pd.merge(moPriority.copy(), mfgCenters[['PART','MfgCenter','LaborPer']].copy(), how='left', on='PART') # attach labor info where possible
+# HEY THIS IS WEIRD the MO order labor required is based on labor per * qty produced, but labor per is a BOM reference, so some builds might be off
 moPriority['LaborRequired'] = moPriority['LaborPer'] * moPriority['QTYREMAINING'] # calculate labor for order
 moPriority.sort_values(by='LaborRequired', ascending=False, inplace=True) # bring highest labor to top
 moPriority.drop_duplicates('ORDER', keep='first', inplace=True) # drop duplicate order lines and keep highest labor available
 # HEY THIS IS WEIRD, sorting by datescheduled for priority is arbitrary, Fix it!
 moPriority.sort_values(by='DATESCHEDULED', ascending=True, inplace=True)
-moPriority = moPriority[['PART','DATESCHEDULED','MfgCenter','LaborRequired']].copy()
+moPriority = moPriority[['ORDER','DATESCHEDULED','MfgCenter','LaborRequired']].copy()
+# bandaid for missing MfgCenter and LaborRequired
+moNullCheck = moPriority[moPriority['MfgCenter'].isnull()].copy()
+moPriority = moPriority[moPriority['MfgCenter'].notnull()].copy()
+# adding Pro line as area responsible for anything unknown, probably not a good idea
+moNullCheck['MfgCenter'] = 'Pro line'
+for missingOrder in moNullCheck['ORDER']:
+	logging.debug('@5')
+	missingLabor = sch.add_to_missing_labor(part=missingOrder, missingLabor=missingLabor)
+moPriority = moPriority.copy().append(moNullCheck.copy())
+
 # now create order priority by appending SO and MO
-orderPriority = soPriority.copy().append(moDF.copy())
+orderPriority = soPriority.copy().append(moPriority.copy())
 orderPriority.reset_index(drop=True, inplace=True)
 orderPriority['Priority'] = np.nan
 pri = 1
 for index in orderPriority.index:
+	logging.debug('@6')
 	orderPriority.at[index, 'Priority'] = pri
 	pri += 1
+
+# HEY, filling the empty labor sets with 0 might not be a good idea, either handle missing labor better elsewhere or log these before replacing them
+orderPriority['LaborRequired'] = orderPriority['LaborRequired'].fillna(0)
 
 ordPriHeaders = list(orderPriority.copy())
 scheduledOrders = pd.DataFrame(columns=ordPriHeaders) # this will store anything scheduled and removed from orderPriority
@@ -226,7 +271,11 @@ def order_schedule_attempt(orderPriority,
 	scheduleSuccess = False
 	x = 0
 	while x < len(orderPriority):
-		print(x, ', ')
+		# debug_here()
+		# if len(orderPriority) > 1345:
+			# debug_here()
+		print(str(x) + ' of ' + str(len(orderPriority)))
+		logging.debug(str(x) + ' of ' + str(len(orderPriority)))
 		orderPriority.reset_index(drop=True, inplace=True) # might need to do this to make sure rows nums and indexes match for ease
 
 
@@ -236,13 +285,16 @@ def order_schedule_attempt(orderPriority,
 		currentOrderSum.reset_index(inplace=True)
 		currentOrderSum.rename(columns={'QTYREMAINING':'INV'}, inplace=True)
 		currentInvSum = invDF.copy().append(currentOrderSum.copy())
-		currentInvSum.groupby('PART').sum()
+		currentInvSum = currentInvSum.groupby('PART').sum()
+		currentInvSum.reset_index(inplace=True)
 		negativeInv = currentInvSum[currentInvSum['INV'] < 0]
 		if len(negativeInv) > 0: # if any inventory lines are negative, this will be true
-			print(negativeInv)
-			print('HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHOOOOOOOOOOOOOOOOOOOOOOOOOOOO') # I think this will throw an error
+			# print(negativeInv)
+			# print('HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHOOOOOOOOOOOOOOOOOOOOOOOOOOOO') # I think this will throw an error
+			logging.debug('@7')
+			pass
 
-
+		currentOrder = orderPriority['ORDER'].iat[x] # will need to check if there are restrictions for this order
 		# ?Check first pri order for earliest available schedule time according to labor group (probably Shipping on first loop)
 		workCenter = orderPriority['MfgCenter'].iat[x] # production area for current order
 		laborRequired = orderPriority['LaborRequired'].iat[x] # maybe not necessary yet?
@@ -250,32 +302,41 @@ def order_schedule_attempt(orderPriority,
 		print(workCenter)
 		prevSchedLabor = scheduledOrders[scheduledOrders['MfgCenter'] == workCenter].copy()
 		if len(prevSchedLabor) > 0:
+			logging.debug('@8')
 			laborUsed = prevSchedLabor['LaborRequired'].sum()
-		laborAvailable = dateListDict[workCenter].copy()
-		laborAvailable = laborAvailable[laborAvailable['AvailableLabor'] > laborUsed].copy()
-		dateAttemptStart = laborAvailable['StartDate'].iat[0] # this should be the start date this order will try to schedule
+		logging.debug('workCenter: ' + str(workCenter) + ' for order: ' + str(currentOrder))
+		availableLabor = dateListDict[workCenter].copy()
+		availableLabor = availableLabor[availableLabor['AvailableLabor'] > laborUsed].copy()
+		dateAttemptStart = availableLabor['StartDate'].iat[0] # this should be the start date this order will try to schedule
+		# laborAvailable = availableLabor['AvailableLabor'].iat[0] # This doesn't seem to be necessary, actually needed laborUsed
 
-		currentOrder = orderPriority['ORDER'].iat[x] # will need to check if there are restrictions for this order
+
 
 		# if there is an earliest start date limit and it's later than the attempted start,
 		# then move on to the next order in the priority list
 		orderDateLimit = earliestDateAllowed[earliestDateAllowed['ORDER'] == currentOrder].copy()
 		if len(orderDateLimit) > 0:
+			logging.debug('@9')
 			currentDateLimit = orderDateLimit['startDateLimit'].iat[0]
 			if dateAttemptStart < currentDateLimit:
+				logging.debug('@a')
 				x += 1
-				print('date limited', ', ')
+				logging.debug('date limited')
 				continue
 
+		# if currentOrder == '51539/41209':
+		# 	debug_here()
 
 		# there might be an issue with this next section.
 		# if a dependency is scheduled for later than the current attempt,
 		# then this order can't be scheduled yet.
 		# can fix this by making any order that exists as a dependecy affect other orders' earliest start dates.
+		# debug_here()
 		orderDependencyLimit = dependencies[dependencies['ORDER'] == currentOrder].copy()
 		if len(orderDependencyLimit) > 0:
+			logging.debug('@b')
 			x += 1
-			print('order dependent', ', ')
+			logging.debug('order dependent')
 			continue
 
 		# Make an Inventory Counter:
@@ -303,19 +364,20 @@ def order_schedule_attempt(orderPriority,
 		currentShortageCheck = currentOrderLines[['PART','QTYREMAINING']].copy().groupby('PART').sum()
 		currentShortageCheck.reset_index(inplace=True)
 		invShort = invCounter.copy().append(currentShortageCheck.copy())
-		invShort.groupby('PART').sum()
+		invShort = invShort.groupby('PART').sum()
 		invShort.reset_index(inplace=True)
 		invShort = invShort[invShort['QTYREMAINING'] < 0].copy()
 
 		# if there are no shortages, then this order can be scheduled right now
 		if len(invShort) == 0:
+			logging.debug('@c')
 			# schedule current order
-			print('scheduling no shortage', ' ')
-			print(currentOrder)
+			logging.debug('scheduling no shortage')
+			logging.debug('scheduling order: ' + str(currentOrder))
 			orderPriority, scheduledOrders, dependencies, earliestDateAllowed, unscheduledLines, scheduledLines = sch.schedule_order(currentOrder=currentOrder,
 																																 	 orderPriority=orderPriority,
 																																 	 laborRequired=laborRequired,
-																																 	 laborAvailable=laborAvailable,
+																																 	 laborScheduled=laborUsed,
 																																 	 dateListCenter=dateListDict[workCenter],
 																																 	 scheduledOrders=scheduledOrders,
 																																 	 dependencies=dependencies,
@@ -323,20 +385,23 @@ def order_schedule_attempt(orderPriority,
 																																 	 unscheduledLines=unscheduledLines,
 																																 	 scheduledLines=scheduledLines)
 		else:
+			logging.debug('@d')
 			# isolate the shortages common to current order lines
+			# HEY I THINK invShort is already limiting to order specific lines, so this might be an extra check, not a problem though
 			negativeOrderShort = currentShortageCheck[currentShortageCheck['QTYREMAINING'] < 0].copy()
 			negativeOrderShort.rename(columns={'QTYREMAINING':'OrderShort'}, inplace=True)
 			orderShort = pd.merge(invShort.copy(), negativeOrderShort.copy(), how='left', on='PART')
 			orderShort.dropna(inplace=True)
 			# if there aren't any inv shortages directly from this order, then it can be scheduled
 			if len(orderShort) == 0:
+				logging.debug('@e')
 				# schedule current order
-				print('scheduling no applicable shortage', ' ')
-				print(currentOrder)
+				logging.debug('scheduling no applicable shortage')
+				logging.debug('scheduling order: ' + str(currentOrder))
 				orderPriority, scheduledOrders, dependencies, earliestDateAllowed, unscheduledLines, scheduledLines = sch.schedule_order(currentOrder=currentOrder,
 																																	 	 orderPriority=orderPriority,
 																																	 	 laborRequired=laborRequired,
-																																	 	 laborAvailable=laborAvailable,
+																																	 	 laborScheduled=laborUsed,
 																																	 	 dateListCenter=dateListDict[workCenter],
 																																	 	 scheduledOrders=scheduledOrders,
 																																	 	 dependencies=dependencies,
@@ -344,16 +409,20 @@ def order_schedule_attempt(orderPriority,
 																																	 	 unscheduledLines=unscheduledLines,
 																																	 	 scheduledLines=scheduledLines)
 			else:
+				logging.debug('@f')
 				# choose the lesser shortage between inventory counter and order qty for each part
 				orderShort['CalcShort'] = np.nan
 				orderShort.reset_index(drop=True, inplace=True)
 				shawtyCheck = 0
 				while shawtyCheck < len(orderShort):
+					logging.debug('@g')
 					partInvShort = orderShort['QTYREMAINING'].iat[shawtyCheck]
 					partOrderShort = orderShort['OrderShort'].iat[shawtyCheck]
-					if partInvShort < partOrderShort:
+					if partInvShort > partOrderShort:
+						logging.debug('@h')
 						orderShort['CalcShort'].iat[shawtyCheck] = partInvShort
 					else:
+						logging.debug('@i')
 						orderShort['CalcShort'].iat[shawtyCheck] = partOrderShort
 					shawtyCheck += 1
 				shortage = orderShort[['PART','CalcShort']].copy()
@@ -363,6 +432,7 @@ def order_schedule_attempt(orderPriority,
 				# need to resolve all make shortages before you start creating fake POs
 				makeShortage = shortage[shortage['Make/Buy'] == 'Make'].copy()
 				if len(makeShortage) > 0:
+					logging.debug('@j')
 					# the scheduled positive orders before the current attempt date are considered in the shortage already
 					# so collect the future positive orders already scheduled to see if they cover the shortage
 					# and the unscheduled positive orders (sorted by priority) as well
@@ -373,80 +443,111 @@ def order_schedule_attempt(orderPriority,
 					positiveUnscheduledLines.sort_values('Priority', ascending=True, inplace=True)
 
 					for part in makeShortage['PART']:
+						logging.debug('@k')
 						# identify the first part, shortage, and relevant order lines
 						partShortage = makeShortage[makeShortage['PART'] == part].copy()
 						short = partShortage['CalcShort'].iat[0]
 						partFutureLines = positiveFutureScheduledLines[positiveFutureScheduledLines['PART'] == part].copy()
-						partUnscheduleLines = positiveUnscheduledLines[positiveUnscheduledLines['PART'] == part].copy()
+						partUnscheduledLines = positiveUnscheduledLines[positiveUnscheduledLines['PART'] == part].copy()
 						# loop through until this part's shortage is covered
 						while short < 0:
+							logging.debug('@l')
 							# start with already scheduled future orders
 							if len(partFutureLines) > 0: # set an earliest date limit based on their schedule dates, can't adjust priority because they're scheduled
+								logging.debug('@m')
+								logging.debug('checking part future lines: ' + str(part))
 								short = short + partFutureLines['QTYREMAINING'].iat[0]
 								earliestDateAllowed = sch.attempt_adjust_earliest_start_date(order=currentOrder,
 																					  	 	 newDate=partFutureLines['DATESCHEDULED'].iat[0],
 																					  	 	 earliestDateList=earliestDateAllowed)
 								partFutureLines.drop(partFutureLines.index[0], inplace=True)
 							# move on to positive unscheduled orders
-							elif len(partUnscheduleLines) > 0: # set a dependency and bump the order priority up
-								short = short + partUnscheduleLines['QTYREMAINING'].iat[0]
+							elif len(partUnscheduledLines) > 0: # set a dependency and bump the order priority up
+								logging.debug('@n')
+								logging.debug('checking part lines TBD: ' + str(part))
+								short = short + partUnscheduledLines['QTYREMAINING'].iat[0]
 								dependencies = sch.set_dependency(order=currentOrder,
-															  	  dependency=partUnscheduleLines['ORDER'].iat[0],
+															  	  dependency=partUnscheduledLines['ORDER'].iat[0],
 															  	  dependencyDF=dependencies)
-								orderPriority = sch.attempt_adjust_order_priority(adjustOrder=partUnscheduleLines['ORDER'].iat[0],
+								orderPriority = sch.attempt_adjust_order_priority(adjustOrder=partUnscheduledLines['ORDER'].iat[0],
 																			  	  rootOrder=currentOrder,
 																			  	  orderPriority=orderPriority)
-								partUnscheduleLines.drop(partUnscheduleLines.index[0], inplace=True)
+								partUnscheduledLines.drop(partUnscheduledLines.index[0], inplace=True)
 							# then create fake work orders for remaining shortage
 							else: # create fake order and place priority one above current order
+								logging.debug('@o')
 								OMGPLACEHOLDER, fakeOrderIter = sch.generate_fake_order(fakeOrderIter)
+								logging.debug('creating fake order using: ' + str(OMGPLACEHOLDER) + ' for ' + str(part))
+								# if OMGPLACEHOLDER == 'P1':
+								# 	debug_here()
 								laborRef = mfgCenters[mfgCenters['PART'] == part].copy()
 								# HEY if the short is multiplied by labor required, it should consider that some BOMs create more than 1 ea of a FG
 								if len(laborRef) > 0: # hopefully there's a default BOM reference with a labor estimate
+									logging.debug('@p')
 									thisBOM = laborRef['BOM'].iat[0]
 									thisCenter = laborRef['MfgCenter'].iat[0]
+									if pd.isnull(thisCenter): # if the production center isn't defined then guess pro line
+										logging.debug('@q')
+										thisCenter = 'Pro line'
 									thisLaborRequ = laborRef['LaborPer'].iat[0]
+									if pd.isnull(thisLaborRequ):
+										logging.debug('@r')
+										thisLaborRequ = 0
 								else:
+									logging.debug('@s')
 									missingLabor = sch.add_to_missing_labor(part=part, missingLabor=missingLabor)
 									fgBoms = bomDF[bomDF['FG'] == 10].copy()
 									fgBoms = fgBoms[fgBoms['PART'] == part].copy()
 									if len(fgBoms) > 0:
+										# this should be rare if possible
+										# it would only happen when there is no record of the "make" part on the mfgCenters list
+										# but it still shows up as a finished good on the BOM list as a secondary item to something else
+										# though it's likely still impossible.
+										logging.debug('@t')
 										thisBOM = fgBoms['BOM'].iat[0]
 										# just assign fake center and labor numbers
-										thisCenter = 'Pro Line'
+										thisCenter = 'Pro line'
 										thisLaborRequ = 0
 									else:
+										logging.debug('@u')
 										thisBOM = part + ' NO BOM'
-										thisCenter = 'Pro Line'
+										thisCenter = 'Pro line'
 										thisLaborRequ = 0
 								# reference the bomDF to create unscheduled order lines
 								bomLines = bomDF[bomDF['BOM'] == thisBOM].copy()
 								if len(bomLines) > 0: # if the BOM exists, create a set of fake lines
+									logging.debug('@v')
+									logging.debug('    BOM exists')
 									fgBomLines = bomLines[bomLines['FG'] == 10].copy()
 									fgBomLines = fgBomLines[fgBomLines['PART'] == part].copy()
 									fgQty = fgBomLines['QTY'].iat[0]
-									multiple = short / fgQty
+									multiple = abs(short) / fgQty
 									bomLines['QTYREMAINING'] = bomLines['QTY'] * multiple
 									bomLines['ORDER'] = OMGPLACEHOLDER
 									bomLines['ITEM'] = 'Phantom'
 									rawGoods = bomLines[bomLines['QTYREMAINING'] <= 0].copy()
-									finishGoods = bomLines[bomLines['QTYREMAINING'] < 0].copy()
+									finishGoods = bomLines[bomLines['QTYREMAINING'] > 0].copy()
 									rawGoods['ORDERTYPE'] = 'Raw Good'
 									finishGoods['ORDERTYPE'] = 'Finished Good'
 									bomLines = finishGoods.copy().append(rawGoods.copy())
 									bomLines['DATESCHEDULED'] = dateAttemptStart
 									bomLines['PARENT'] = currentOrder
 									fakeOrderLine = bomLines[['ORDER','ITEM','ORDERTYPE','PART','QTYREMAINING','DATESCHEDULED','PARENT']].copy()
+									short = 0
 								else: # if BOM doesn't exist, just create a fake finished good line
+									logging.debug('@w')
+									logging.debug('    BOM does NOT exist')
 									missingBOM = sch.add_to_missing_bom(part=part, missingBOM=missingBOM)
-									fakeOrderLine = pd.DataFrame({'ORDER': OMGPLACEHOLDER,
-																  'ITEM': 'Phantom',
-																  'ORDERTYPE': 'Finished Good',
-																  'PART': part,
-																  'QTYREMAINING': short,
-																  'DATESCHEDULED': dateAttemptStart,
-																  'PARENT': currentOrder})
+									fgFakePositive = abs(short) # making sure this FG line will be positive, the short value should still be negative
+									fakeOrderLine = pd.DataFrame(data={'ORDER': [OMGPLACEHOLDER],
+																  	   'ITEM': ['Phantom'],
+																  	   'ORDERTYPE': ['Finished Good'],
+																  	   'PART': [part],
+																  	   'QTYREMAINING': [fgFakePositive],
+																  	   'DATESCHEDULED': [dateAttemptStart],
+																  	   'PARENT': [currentOrder]})
 									multiple = 1
+									short = 0
 
 								# add the fake order lines to overall unscheduled lines list
 								unscheduledLines = unscheduledLines.copy().append(fakeOrderLine.copy())
@@ -454,11 +555,11 @@ def order_schedule_attempt(orderPriority,
 								thisLabor = thisLaborRequ * multiple
 								
 								# create fake order priority line
-								tempOrderPriority = pd.DataFrame({'ORDER': OMGPLACEHOLDER,
-																  'DATESCHEDULED': dateAttemptStart,
-																  'MfgCenter': thisCenter,
-																  'LaborRequired': thisLabor,
-																  'Priority': len(orderPriority)})
+								tempOrderPriority = pd.DataFrame(data={'ORDER': [OMGPLACEHOLDER],
+																  	   'DATESCHEDULED': [dateAttemptStart],
+																  	   'MfgCenter': [thisCenter],
+																  	   'LaborRequired': [thisLabor],
+																  	   'Priority': [len(orderPriority)]})
 								# add to orderPriority
 								orderPriority = orderPriority.copy().append(tempOrderPriority.copy())
 								# log it as a dependency
@@ -469,9 +570,9 @@ def order_schedule_attempt(orderPriority,
 								orderPriority = sch.attempt_adjust_order_priority(adjustOrder=OMGPLACEHOLDER,
 																		  	  	  rootOrder=currentOrder,
 																		  	  	  orderPriority=orderPriority)
-					print('make shortage handled, ', '')
-					print(currentOrder)
+					logging.debug('make shortage handled, ' + str(currentOrder))
 					scheduleSuccess = True
+					logging.debug('@x')
 					return (orderPriority,
 							scheduledOrders,
 							scheduledLines,
@@ -485,11 +586,15 @@ def order_schedule_attempt(orderPriority,
 
 
 				else: # section only runs if there are exclusively Buy shortages
+					logging.debug('@y')
+					# if currentOrder == '51539/41209':
+					# 	debug_here()
 					# get a date based on lead time for the earliest these shortages could be filled if purchased now
 					shortage.reset_index(drop=True, inplace=True)
 					buyShortage = pd.merge(shortage.copy(), leadTimes[['PART','LeadTimes']].copy(), how='left', on='PART')
 					buyShortage['LeadTimeDate'] = np.nan
 					for line in range(0, len(buyShortage)):
+						logging.debug('@z')
 						lead = buyShortage['LeadTimes'].iat[line] + 3 # adding 3 to account for time to place and process order
 						dateOptions = referenceDateList[referenceDateList['AvailableLabor'] >= lead].copy()
 						leadDate = dateOptions['StartDate'].iat[0]
@@ -500,35 +605,52 @@ def order_schedule_attempt(orderPriority,
 					pOrders = pOrders[pOrders['DATESCHEDULED'] > dateAttemptStart].copy()
 					pOrders.sort_values('DATESCHEDULED', ascending=True, inplace=True)
 					for line in range(0, len(buyShortage)):
+						logging.debug('^1')
 						# check for positive orders that are also before the earliest a new order would arrive based on lead time			
 						rowIndex = buyShortage.index[line]
 						part = buyShortage['PART'].iat[line]
 						short = buyShortage['CalcShort'].iat[line]
+						logging.debug(str(part) + ' is short ' + str(short))
 						leadDate = buyShortage['LeadTimeDate'].iat[line]
 						relevantOrders = pOrders[pOrders['DATESCHEDULED'] <= leadDate].copy()
 						relevantOrders = relevantOrders[relevantOrders['PART'] == part].copy()
+						# debug_here()
 						if len(relevantOrders) > 0:
+							logging.debug('^2')
+							logging.debug('relevant orders:')
+							logging.debug(relevantOrders)
 							# if the orders cover the buyShortage, use the last lead time necessary to cover it
 							if (relevantOrders['QTYREMAINING'].sum() + short) >= 0:
+								logging.debug('^3')
+								logging.debug('aaa')
 								while short < 0:
+									logging.debug('^4')
+									logging.debug('bbb')
 									short = short + relevantOrders['QTYREMAINING'].iat[0]
 									relevantDate = relevantOrders['DATESCHEDULED'].iat[0]
 									relevantOrders.drop(relevantOrders.index[0], inplace=True)
 								buyShortage.at[rowIndex, 'CalcShort'] = short
 								buyShortage.at[rowIndex, 'LeadTimeDate'] = relevantDate
+								logging.debug('ccc ' + str(short) + ' date: ' + str(relevantDate))
 							# if the orders don't cover the shortage, then adjust the shortage to use all of them
 							# but don't change the lead time, since a purchase has to be made still
 							else:
+								logging.debug('^5')
+								logging.debug('-- no relevant orders --')
 								buyShortage.at[rowIndex, 'CalcShort'] = short + relevantOrders['QTYREMAINING'].sum()
 					# grab the longest lead time
 					buyShortage.sort_values('LeadTimeDate', ascending=False, inplace=True)
 					longestLeadDate = buyShortage['LeadTimeDate'].iat[0]
 					# if the longest lead is after 
 					if longestLeadDate > dateAttemptStart:
+						logging.debug('^6')
+						logging.debug('-- lead date after attempted start date')
 						earliestDateAllowed = sch.attempt_adjust_earliest_start_date(order=currentOrder,
 														   						 	 newDate=longestLeadDate,
 														   						 	 earliestDateList=earliestDateAllowed)
 					else:
+						logging.debug('^7')
+						logging.debug('-- lead date in range; making fake order lines')
 						fakePOLines = buyShortage[buyShortage['CalcShort'] < 0].copy()
 						fakePOLines.rename(columns={'CalcShort':'QTYREMAINING'}, inplace=True)
 						fakePOLines['ITEM'] = 'Phantom'
@@ -536,28 +658,32 @@ def order_schedule_attempt(orderPriority,
 						fakePOLines['DATESCHEDULED'] = longestLeadDate
 						fakePOLines['PARENT'] = currentOrder
 						fakePOLines['ORDER'] = np.nan
+						fakePOLines['ORDER'] = fakePOLines['ORDER'].astype('str')
 						for poLine in range(0, len(fakePOLines)):
+							logging.debug('^8')
 							OMGPLACEHOLDER, fakeOrderIter = sch.generate_fake_order(fakeOrderIter)
+							# debug_here()
 							fakePOLines.at[fakePOLines.index[poLine], 'ORDER'] = OMGPLACEHOLDER
 						fakePOLines = fakePOLines[['ORDER','ITEM','ORDERTYPE','PART','QTYREMAINING','DATESCHEDULED','PARENT']].copy()
 						scheduledLines = scheduledLines.copy().append(fakePOLines.copy())
 
 						# schedule current order
-						print('scheduling', ' ')
+						logging.debug('scheduling order: ' + str(currentOrder))
+						print('scheduling ' + str(currentOrder))
 						print(currentOrder)
 						orderPriority, scheduledOrders, dependencies, earliestDateAllowed, unscheduledLines, scheduledLines = sch.schedule_order(currentOrder=currentOrder,
 																																			 	 orderPriority=orderPriority,
 																																			 	 laborRequired=laborRequired,
-																																			 	 laborAvailable=laborAvailable,
+																																			 	 laborScheduled=laborUsed,
 																																			 	 dateListCenter=dateListDict[workCenter],
 																																			 	 scheduledOrders=scheduledOrders,
 																																			 	 dependencies=dependencies,
 																																			 	 earliestDateAllowed=earliestDateAllowed,
 																																			 	 unscheduledLines=unscheduledLines,
 																																			 	 scheduledLines=scheduledLines)
-					print('buy shortage handled, ', '')
-					print(currentOrder)
+					logging.debug('buy shortage handled, ' + str(currentOrder))
 					scheduleSuccess = True
+					logging.debug('^9')
 					return (orderPriority,
 							scheduledOrders,
 							scheduledLines,
@@ -568,7 +694,7 @@ def order_schedule_attempt(orderPriority,
 							fakeOrderIter,
 							missingLabor,
 							missingBOM)
-
+	logging.debug('^a')
 	return (orderPriority,
 			scheduledOrders,
 			scheduledLines,
@@ -581,13 +707,6 @@ def order_schedule_attempt(orderPriority,
 			missingBOM)
 
 
-
-# fakeOrderIter is used to create fake orders throughout the script
-fakeOrderIter = 0
-
-# these are Series used to track missing labor info and BOMs
-missingLabor = pd.DataFrame({'PART':[]})
-missingBOM = pd.DataFrame({'PART':[]})
 
 # beginning of loop
 
@@ -605,39 +724,49 @@ unscheduledLines = soDF.copy().append(moDF.copy()) # all SO and MO lines are uns
 # for the first order in to range of that orders earliest allowed schedule date.
 scheduleSuccess = True # this just makes the first loop run without entering the conditional clause.
 while len(orderPriority) > 0:
+	logging.debug('^b')
 	orderPriority.reset_index(drop=True, inplace=True) # might need to do this to make sure rows nums and indexes match for ease
+	# debug_here()
 	if scheduleSuccess == False:
-		print('scheduleSuccess is False')
+		print('000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000')
+		print('should be making a gap order')
+		logging.debug('^c')
+		logging.debug('scheduleSuccess is False')
 		# check only for orders that don't have dependencies listed
 		indyOrders = orderPriority.copy().append(dependencies.copy())
 		indyOrders.drop_duplicates('ORDER', keep=False, inplace=True)
 		if len(indyOrders) > 0: # I think this should always be true at this point, but just in case ...
-			print('creating gap order')
+			logging.debug('^d')
+			logging.debug('creating gap order')
 			# find the earliest start date possible for orders without dependencies
 			indyOrders = pd.merge(indyOrders.copy(), earliestDateAllowed.copy(), how='left', on='ORDER')
 			indyOrders.sort_values('startDateLimit', ascending=True, inplace=True)
 			limitOrder = indyOrders['ORDER'].iat[0]
 			# calculate expected labor gap
+			workCenter = indyOrders['MfgCenter'].iat[0]
 			gapDate = indyOrders['startDateLimit'].iat[0]
 			gapCenter = indyOrders['MfgCenter'].iat[0]
-			laborAvailable = dateListDict[gapCenter].copy()
-			laborAvailable = laborAvailable[laborAvailable['StartDate'] >= gapDate].copy()
-			limitLabor = laborAvailable['AvailableLabor'].iat[0]
+			availableLabor = dateListDict[gapCenter].copy()
+			availableLabor = availableLabor[availableLabor['StartDate'] >= gapDate].copy()
+			limitLabor = availableLabor['AvailableLabor'].iat[0]
 			laborUsed = 0
 			prevSchedLabor = scheduledOrders[scheduledOrders['MfgCenter'] == workCenter].copy()
 			if len(prevSchedLabor) > 0:
+				logging.debug('^e')
 				laborUsed = prevSchedLabor['LaborRequired'].sum()
 			gapLabor = limitLabor - laborUsed
 			# add labor gap as a scheduled order for its production area
 			gapOrder, fakeOrderIter = sch.generate_fake_order(fakeOrderIter)
-			gapLine = pd.DataFrame({'ORDER': gapOrder,
-									'DATESCHEDULED': gapDate,
-									'MfgCenter': gapCenter,
-									'LaborRequired': gapLabor,
-									'Priority': len(orderPriority)})
+			gapOrder = gapOrder + 'gap'
+			gapLine = pd.DataFrame(data={'ORDER': [gapOrder],
+										 'DATESCHEDULED': [gapDate],
+										 'MfgCenter': [gapCenter],
+										 'LaborRequired': [gapLabor],
+										 'Priority': [len(orderPriority)]})
 			scheduledOrders = scheduledOrders.copy().append(gapLine.copy())
 			print(gapOrder)
 		else: # this would only happen if there are dependencies creating a loop with each other (A need B, B also needs A)
+			logging.debug('^f')
 			# find the earliest start date possible for all remaining orders
 			priorityOrderCheck = pd.merge(orderPriority.copy(), earliestDateAllowed.copy(), how='left', on='ORDER')
 			priorityOrderCheck.sort_values('startDateLimit', ascending=True, inplace=True)
@@ -647,8 +776,10 @@ while len(orderPriority) > 0:
 			### sch.schedule_order()
 			### temporarily causing error because I don't expect this to happen:
 			print('possible eternal loop')
-			print('OOOOOOOOOOOOOOOOOHHHHHHHHHHHHNOOOOOOOOOOOOOOOOOOOOOOOOOOO')
+			# print('OOOOOOOOOOOOOOOOOHHHHHHHHHHHHNOOOOOOOOOOOOOOOOOOOOOOOOOOO')
+			priorityOrderCheck['fakeColumnforError'].iat[0] # this should error out, I want to see when this happens.
 	# run the next order schedule attempt, if the previous run's success was false, then a labor gap filler should make this run successful.
+	logging.debug('^g')
 	orderPriority, scheduledOrders, scheduledLines, unscheduledLines, scheduleSuccess, earliestDateAllowed, dependencies, fakeOrderIter, missingLabor, missingBOM = order_schedule_attempt(orderPriority=orderPriority,
 																																													   	   scheduledOrders=scheduledOrders,
 																																													   	   scheduledLines=scheduledLines,
@@ -668,7 +799,7 @@ while len(orderPriority) > 0:
 
 
 print('saving results')
-
+logging.debug('^h')
 # save a copy of the schedule to excel
 writer = pd.ExcelWriter(finalSchedFilename)
 orderPriority.to_excel(writer, 'orderPriority')

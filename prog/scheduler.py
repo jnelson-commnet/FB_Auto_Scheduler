@@ -4,8 +4,12 @@ import os
 import pandas as pd
 import numpy as np
 
+
 from IPython.core.debugger import Tracer
 debug_here = Tracer()
+
+import logging
+logging.basicConfig(filename='example.log',level=logging.DEBUG)
 
 import sys
 homey = os.getcwd() # works in jupyter notebook
@@ -33,7 +37,7 @@ def labor_total(orderLabor, usedLabor, extraLabor):
 #### This should be replaced by either an input that can be adjusted or maybe even a sheet that accounts for PTO and stuff.
 def create_date_list(todayTimestamp=pd.Timestamp.today(), dailyLabor=10):
 	# create a list of dates starting with today.
-	dateList = pd.DataFrame({'StartDate': pd.date_range(todayTimestamp, periods=2000, freq='1D'),
+	dateList = pd.DataFrame({'StartDate': pd.date_range(todayTimestamp, periods=5000, freq='1D'),
 							 'DaysFromStart': np.nan,
 							 'AvailableLabor': np.nan})
 
@@ -403,13 +407,17 @@ def schedule_loop_labor_types(modf, orderLeads, mfgCenters, dateList, orderRunTi
 # this function is for setting new earliest start dates for orders.
 # it will not set a date for a specific order if it is already set for a later date.
 def attempt_adjust_earliest_start_date(order, newDate, earliestDateList):
+	logging.debug('^i')
 	earliestDateList.reset_index(drop=True, inplace=True)
 	dateListCheck = earliestDateList[earliestDateList['ORDER'] == order].copy()
 	if len(dateListCheck) > 0: # if it has no rows, then the order just needs to be appended
-		if dateListCheck['startDateLimit'].iat(0) < newDate: # if not then it will keep the later date
+		logging.debug('^j')
+		if dateListCheck['startDateLimit'].iat[0] < newDate: # if not then it will keep the later date
+			logging.debug('^k')
 			rowIndex = earliestDateList.loc[earliestDateList['ORDER'] == order].index[0]
 			earliestDateList.at[rowIndex, 'startDateLimit'] = newDate
 	else: # adds a fresh line with the order and its date limit
+		logging.debug('^l')
 		tempDateDF = pd.DataFrame(data={'ORDER': [order],
 									    'startDateLimit': [newDate]})
 		earliestDateList = earliestDateList.copy().append(tempDateDF.copy())
@@ -419,6 +427,7 @@ def attempt_adjust_earliest_start_date(order, newDate, earliestDateList):
 # this function is for bumping priority levels higher for orders needed as dependencies
 # it will not change priority if it is already higher than the reference order
 def attempt_adjust_order_priority(adjustOrder, rootOrder, orderPriority):
+	logging.debug('^m')
 	orderPriority.reset_index(drop=True, inplace=True)
 	# get the priority levels of each order
 	adjustOrderFrame = orderPriority[orderPriority['ORDER'] == adjustOrder].copy()
@@ -427,32 +436,56 @@ def attempt_adjust_order_priority(adjustOrder, rootOrder, orderPriority):
 	rootOrderPri = rootOrderFrame['Priority'].iat[0].copy()
 	# if the adjustable order is lower priority (higher numerically), set it just above the root order
 	if adjustOrderPri > rootOrderPri:
+		logging.debug('^n')
 		rowIndex = orderPriority.loc[orderPriority['ORDER'] == adjustOrder].index[0]
 		orderPriority.at[rowIndex, 'Priority'] = rootOrderPri - 0.5
 		# sort the orders by priority and refresh the list to consecutive integers
 		orderPriority.sort_values('Priority', ascending=True, inplace=True)
 		pri = 1
 		for index in orderPriority.index:
+			logging.debug('^o')
 			orderPriority.at[index, 'Priority'] = pri
 			pri += 1
 		orderPriority.reset_index(drop=True, inplace=True)
+	else:
+		# if the adjust order priority is already higher than the root order priority then just sort.
+		# HEY there is a chance that this also requires a refreshed priority list
+		orderPriority.sort_values('Priority', ascending=True, inplace=True)
+		# pri = 1
+		# for index in orderPriority.index:
+			# logging.debug('^o')
+		# 	orderPriority.at[index, 'Priority'] = pri
+		# 	pri += 1
 	return orderPriority.copy()
 
 # this function will add a dependency to the existing list
 def set_dependency(order, dependency, dependencyDF):
+	logging.debug('^p')
 	tempDF = pd.DataFrame(data={'ORDER': [order],
 						   		'dependency': [dependency]})
 	dependencyDF = dependencyDF.copy().append(tempDF.copy())
 	return dependencyDF.copy()
 
 # this function schedules the current order during a loop
-def schedule_order(currentOrder, orderPriority, laborRequired, laborAvailable, dateListCenter, scheduledOrders, dependencies, earliestDateAllowed, unscheduledLines, scheduledLines):
+def schedule_order(currentOrder, orderPriority, laborRequired, laborScheduled, dateListCenter, scheduledOrders, dependencies, earliestDateAllowed, unscheduledLines, scheduledLines):
+	logging.debug('^q')
 	# schedule the current order at time it would finish if started at attempted date
+	# if currentOrder == '26247:003':
+	# 	debug_here()
 	orderToSchedule = orderPriority[orderPriority['ORDER'] == currentOrder].copy()
 	# laborRequired = orderToSchedule['LaborRequired'].iat[0] # unnecessary because it's still saved from earlier
-	# laborAvailable # also set at the beginning of the loop
-	totalLabor = laborRequired + laborAvailable
+	# laborScheduled # also set at the beginning of the loop
+	totalLabor = laborRequired + laborScheduled
 	laborDateRef = dateListCenter[dateListCenter['AvailableLabor'] >= totalLabor].copy()
+	if len(laborDateRef) == 0:
+		print('THIS IS ATTEMPTING TO SCHEDULE A FEW YEARS IN THE FUTURE')
+		print('check the labor needed for this order')
+		print('labor previously scheduled: ' + str(laborScheduled))
+		print('labor required: ' + str(laborRequired))
+		print('order is: ')
+		print(orderToSchedule)
+		print(unscheduledLines[unscheduledLines['ORDER'] == currentOrder])
+		finishDate = laborDateRef['StartDate'].iat[0] # This line should error out because the dataFrame is empty
 	finishDate = laborDateRef['StartDate'].iat[0]
 	orderToSchedule['DATESCHEDULED'] = finishDate
 	scheduledOrders = scheduledOrders.copy().append(orderToSchedule.copy())
@@ -461,12 +494,13 @@ def schedule_order(currentOrder, orderPriority, laborRequired, laborAvailable, d
 
 	# HEY might need to add finishDate as earliest date limits to orders with this dependency, not sure
 	# adjusting earliest date limits of orders with current order as dependency
-	dependentList = dependencies[dependencies['dependecy'] == currentOrder].copy()
+	dependentList = dependencies[dependencies['dependency'] == currentOrder].copy()
 	for depOrder in dependentList['ORDER']:
-		earliestDateAllowed = sch.attempt_adjust_earliest_start_date(order=depOrder,
+		logging.debug('^r')
+		earliestDateAllowed = attempt_adjust_earliest_start_date(order=depOrder,
 								   						 		 newDate=finishDate,
 								   						 		 earliestDateList=earliestDateAllowed)
-	dependencies = dependencies[dependencies['dependecy'] != currentOrder].copy()
+	dependencies = dependencies[dependencies['dependency'] != currentOrder].copy()
 
 	linesToSchedule = unscheduledLines[unscheduledLines['ORDER'] == currentOrder].copy()
 	linesToSchedule['DATESCHEDULED'] = finishDate
@@ -483,16 +517,19 @@ def schedule_order(currentOrder, orderPriority, laborRequired, laborAvailable, d
 
 # this function creates fake order numbers for Phantom orders
 def generate_fake_order(fakeOrderIter):
+	logging.debug('^t')
 	fakeOrderIter += 1
 	newOrder = "P" + str(fakeOrderIter)
 	return(newOrder, fakeOrderIter)
 
 # this function adds a part to the Series tracking parts with no labor info
 def add_to_missing_labor(part, missingLabor):
+	logging.debug('^u')
 	missingLabor = missingLabor.append(pd.DataFrame(data={'PART': [part]}))
 	return missingLabor
 
 # this function adds a part to the Series tracking parts with no BOMs
 def add_to_missing_bom(part, missingBOM):
+	logging.debug('^v')
 	missingBOM = missingBOM.append(pd.DataFrame(data={'PART': [part]}))
 	return missingBOM
