@@ -57,8 +57,8 @@ missingFilename = os.path.join(homey, 'missing.xlsx')
 # fa.run_queries(queryPath=sqlPath, dataPath=dataPath)
 
 # Live server:
-sys.path.insert(0, 'Z:\Python projects\FishbowlAPITestProject')
-import connecttest
+# sys.path.insert(0, 'Z:\Python projects\FishbowlAPITestProject')
+# import connecttest
 
 print('queries started')
 
@@ -652,7 +652,7 @@ def order_schedule_attempt(orderPriority,
 						logging.debug('^7')
 						logging.debug('-- lead date in range; making fake order lines')
 						fakePOLines = buyShortage[buyShortage['CalcShort'] < 0].copy()
-						fakePOLines.rename(columns={'CalcShort':'QTYREMAINING'}, inplace=True)
+						fakePOLines['QTYREMAINING'] = fakePOLines['CalcShort'].copy() * (-1)
 						fakePOLines['ITEM'] = 'Phantom'
 						fakePOLines['ORDERTYPE'] = 'Purchase'
 						fakePOLines['DATESCHEDULED'] = longestLeadDate
