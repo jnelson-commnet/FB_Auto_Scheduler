@@ -13,7 +13,10 @@ select
                 else (soitem.qtytofulfill -soitem.qtyfulfilled)
         end as "QTYREMAINING",
         soitem.datescheduledfulfillment as "DATESCHEDULED",
-        so.num as "PARENT"
+        so.num as "PARENT",
+        so.priorityid as "PRIORITY",
+        so.dateissued as "ISSUED",
+        cscustdelivdate.info as "CUSTDELIVDATE"
 from
         so
         left join soitem on soitem.soid = so.id
@@ -21,6 +24,10 @@ from
         left join product on soitem.productid = product.id
         left join part on product.partid = part.id
         left join sostatus on so.statusid = sostatus.id
+        left join (select *
+                    from customtimestamp
+                    where customtimestamp.customfieldid = 112)
+            as CSCUSTDELIVDATE on so.id = CSCUSTDELIVDATE.RECORDID
 where
         so.statusid in(20, 25)
         and PART.TYPEID = 10

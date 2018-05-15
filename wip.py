@@ -115,12 +115,16 @@ mfgCenters = pd.read_excel(mfgCentersFilename, header=0)
 moDF = pd.read_excel(moFilename, header=0)
 moDF['DATESCHEDULED'] = pd.to_datetime(moDF['DATESCHEDULED'].copy())
 moDF['ORDER'] = moDF['ORDER'].astype(str)
+moDF['MOSCHEDULEDATE'] = pd.to_datetime(moDF['MOSCHEDULEDATE'].copy())
+moDF['MOISSUEDATE'] = pd.to_datetime(moDF['MOISSUEDATE'].copy())
+moPriority = moDF.copy() # saving copy for priority assorting
+moDF = moDF[['ORDER','ITEM','ORDERTYPE','PART','QTYREMAINING','DATESCHEDULED','PARENT']].copy()
 
 # save lead time estimates
 leadTimes = pd.read_excel(leadFilename, header=0)
 # the lead time estimates are drawing from a couple fields
 # the following section sorts out the preferred lead time for each part and adds it to the "LeadTimes" column
-leadTimes.sort_values(['PART','DefaultVendor','LastDate'], ascending=[True,False,False], inplace=True)
+leadTimes.sort_values(by=['PART','DefaultVendor','LastDate'], ascending=[True,False,False], inplace=True)
 leadTimes.drop_duplicates('PART', keep='first', inplace=True)
 leadTimes['LeadTimes'] = np.nan
 x=0
@@ -175,6 +179,10 @@ partDF = pd.read_excel(partFilename, header=0)
 soDF = pd.read_excel(soFilename, header=0)
 soDF['DATESCHEDULED'] = pd.to_datetime(soDF['DATESCHEDULED'].copy())
 soDF['ORDER'] = soDF['ORDER'].astype(str)
+soDF['ISSUED'] = pd.to_datetime(soDF['ISSUED'].copy())
+soDF['CUSTDELIVDATE'] = pd.to_datetime(soDF['CUSTDELIVDATE'].copy())
+soPriority = soDF.drop_duplicates('ORDER', keep='first').copy() # saving for priority sorting later
+soDF = soDF[['ORDER','ITEM','ORDERTYPE','PART','QTYREMAINING','DATESCHEDULED','PARENT']].copy()
 
 # save current Purchase Orders
 poDF = pd.read_excel(poFilename, header=0)
@@ -196,10 +204,10 @@ missingBOM = pd.DataFrame(data={'PART':[]})
 ### Sort Orders by Priority ###
 
 # need a list of orders and way to prioritize them, can be handled a few ways.
-# for now we'll just pretend that the SOs and MOs are coming in order of priority already.
 # the orderPriority list needs to carry the MfgCenter responsible for the order and labor required.
 # SOs all require shipping so start with that ...
-soPriority = soDF.drop_duplicates('ORDER', keep='first').copy()
+# soPriority = soDF.drop_duplicates('ORDER', keep='first').copy() # handled above
+soPriority.sort_values(by=['PRIORITY','CUSTDELIVDATE','ISSUED'], ascending=[True,True,True], inplace=True)
 soPriority = soPriority[['ORDER','DATESCHEDULED']].copy()
 soPriority['MfgCenter'] = 'Shipping' # assigning all to shipping dept
 # HEY THIS IS WEIRD, it's a hard coded labor required per SO.
@@ -208,15 +216,13 @@ soPriority['MfgCenter'] = 'Shipping' # assigning all to shipping dept
 shipLaborRequired = 1
 soPriority['LaborRequired'] = shipLaborRequired
 # now we need to get each WO with MfgCenter and labor required
-moPriority = moDF[moDF['QTYREMAINING'] > 0].copy() # reducing WO lines to positive quantities, probably all FGs
+moPriority['PRIORITY'] = moPriority['PRIORITY'].fillna('20-Planned') # default to planned for priority states not yet set
+moPriority = moPriority[moPriority['QTYREMAINING'] > 0].copy() # reducing WO lines to positive quantities, probably all FGs
 moPriority = pd.merge(moPriority.copy(), mfgCenters[['PART','MfgCenter','LaborPer']].copy(), how='left', on='PART') # attach labor info where possible
 # HEY THIS IS WEIRD the MO order labor required is based on labor per * qty produced, but labor per is a BOM reference, so some builds might be off
 moPriority['LaborRequired'] = moPriority['LaborPer'] * moPriority['QTYREMAINING'] # calculate labor for order
 moPriority.sort_values(by='LaborRequired', ascending=False, inplace=True) # bring highest labor to top
 moPriority.drop_duplicates('ORDER', keep='first', inplace=True) # drop duplicate order lines and keep highest labor available
-# HEY THIS IS WEIRD, sorting by datescheduled for priority is arbitrary, Fix it!
-moPriority.sort_values(by='DATESCHEDULED', ascending=True, inplace=True)
-moPriority = moPriority[['ORDER','DATESCHEDULED','MfgCenter','LaborRequired']].copy()
 # bandaid for missing MfgCenter and LaborRequired
 moNullCheck = moPriority[moPriority['MfgCenter'].isnull()].copy()
 moPriority = moPriority[moPriority['MfgCenter'].notnull()].copy()
@@ -226,6 +232,9 @@ for missingOrder in moNullCheck['ORDER']:
 	logging.debug('@5')
 	missingLabor = sch.add_to_missing_labor(part=missingOrder, missingLabor=missingLabor)
 moPriority = moPriority.copy().append(moNullCheck.copy())
+# sorting by custom field priority and then by various schedule dates
+moPriority.sort_values(by=['PRIORITY','MOSCHEDULEDATE','MOISSUEDATE','DATESCHEDULED'], ascending=[True,True,True,True], inplace=True)
+moPriority = moPriority[['ORDER','DATESCHEDULED','MfgCenter','LaborRequired']].copy()
 
 # now create order priority by appending SO and MO
 orderPriority = soPriority.copy().append(moPriority.copy())

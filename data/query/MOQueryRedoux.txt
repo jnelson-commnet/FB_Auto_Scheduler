@@ -15,7 +15,10 @@ select
         else woitem.qtytarget
     end as "QTYREMAINING",
     wo.datescheduled as "DATESCHEDULED",
-    wo.num as "PARENT"
+    wo.num as "PARENT",
+    mo.datescheduled as "MOSCHEDULEDATE",
+    mo.dateissued as "MOISSUEDATE",
+    csmopriority.info as "PRIORITY"
 from
     woitem
     left join wo on woitem.woid = wo.id
@@ -23,6 +26,10 @@ from
     left join bomitemtype on woitem.typeid = bomitemtype.id
     left join moitem on woitem.moitemid = moitem.id
     left join mo on moitem.moid = mo.id
+    left join (select *
+                from customset
+                where customset.customfieldid = 116)
+        as csmopriority on mo.id = csmopriority.recordid
 where
     part.typeid = 10
     and woitem.woid in(select wo.id
