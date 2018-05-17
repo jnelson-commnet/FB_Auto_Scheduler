@@ -407,17 +407,13 @@ def schedule_loop_labor_types(modf, orderLeads, mfgCenters, dateList, orderRunTi
 # this function is for setting new earliest start dates for orders.
 # it will not set a date for a specific order if it is already set for a later date.
 def attempt_adjust_earliest_start_date(order, newDate, earliestDateList):
-	logging.debug('^i')
 	earliestDateList.reset_index(drop=True, inplace=True)
 	dateListCheck = earliestDateList[earliestDateList['ORDER'] == order].copy()
 	if len(dateListCheck) > 0: # if it has no rows, then the order just needs to be appended
-		logging.debug('^j')
 		if dateListCheck['startDateLimit'].iat[0] < newDate: # if not then it will keep the later date
-			logging.debug('^k')
 			rowIndex = earliestDateList.loc[earliestDateList['ORDER'] == order].index[0]
 			earliestDateList.at[rowIndex, 'startDateLimit'] = newDate
 	else: # adds a fresh line with the order and its date limit
-		logging.debug('^l')
 		tempDateDF = pd.DataFrame(data={'ORDER': [order],
 									    'startDateLimit': [newDate]})
 		earliestDateList = earliestDateList.copy().append(tempDateDF.copy())
@@ -427,7 +423,6 @@ def attempt_adjust_earliest_start_date(order, newDate, earliestDateList):
 # this function is for bumping priority levels higher for orders needed as dependencies
 # it will not change priority if it is already higher than the reference order
 def attempt_adjust_order_priority(adjustOrder, rootOrder, orderPriority):
-	logging.debug('^m')
 	orderPriority.reset_index(drop=True, inplace=True)
 	# get the priority levels of each order
 	adjustOrderFrame = orderPriority[orderPriority['ORDER'] == adjustOrder].copy()
@@ -436,14 +431,12 @@ def attempt_adjust_order_priority(adjustOrder, rootOrder, orderPriority):
 	rootOrderPri = rootOrderFrame['Priority'].iat[0].copy()
 	# if the adjustable order is lower priority (higher numerically), set it just above the root order
 	if adjustOrderPri > rootOrderPri:
-		logging.debug('^n')
 		rowIndex = orderPriority.loc[orderPriority['ORDER'] == adjustOrder].index[0]
 		orderPriority.at[rowIndex, 'Priority'] = rootOrderPri - 0.5
 		# sort the orders by priority and refresh the list to consecutive integers
 		orderPriority.sort_values('Priority', ascending=True, inplace=True)
 		pri = 1
 		for index in orderPriority.index:
-			logging.debug('^o')
 			orderPriority.at[index, 'Priority'] = pri
 			pri += 1
 		orderPriority.reset_index(drop=True, inplace=True)
@@ -453,14 +446,12 @@ def attempt_adjust_order_priority(adjustOrder, rootOrder, orderPriority):
 		orderPriority.sort_values('Priority', ascending=True, inplace=True)
 		# pri = 1
 		# for index in orderPriority.index:
-			# logging.debug('^o')
 		# 	orderPriority.at[index, 'Priority'] = pri
 		# 	pri += 1
 	return orderPriority.copy()
 
 # this function will add a dependency to the existing list
 def set_dependency(order, dependency, dependencyDF):
-	logging.debug('^p')
 	tempDF = pd.DataFrame(data={'ORDER': [order],
 						   		'dependency': [dependency]})
 	dependencyDF = dependencyDF.copy().append(tempDF.copy())
@@ -468,7 +459,6 @@ def set_dependency(order, dependency, dependencyDF):
 
 # this function schedules the current order during a loop
 def schedule_order(currentOrder, orderPriority, laborRequired, laborScheduled, dateListCenter, scheduledOrders, dependencies, earliestDateAllowed, unscheduledLines, scheduledLines):
-	logging.debug('^q')
 	# schedule the current order at time it would finish if started at attempted date
 	# if currentOrder == '26247:003':
 	# 	debug_here()
@@ -496,7 +486,6 @@ def schedule_order(currentOrder, orderPriority, laborRequired, laborScheduled, d
 	# adjusting earliest date limits of orders with current order as dependency
 	dependentList = dependencies[dependencies['dependency'] == currentOrder].copy()
 	for depOrder in dependentList['ORDER']:
-		logging.debug('^r')
 		earliestDateAllowed = attempt_adjust_earliest_start_date(order=depOrder,
 								   						 		 newDate=finishDate,
 								   						 		 earliestDateList=earliestDateAllowed)
@@ -517,19 +506,16 @@ def schedule_order(currentOrder, orderPriority, laborRequired, laborScheduled, d
 
 # this function creates fake order numbers for Phantom orders
 def generate_fake_order(fakeOrderIter):
-	logging.debug('^t')
 	fakeOrderIter += 1
 	newOrder = "P" + str(fakeOrderIter)
 	return(newOrder, fakeOrderIter)
 
 # this function adds a part to the Series tracking parts with no labor info
 def add_to_missing_labor(part, missingLabor):
-	logging.debug('^u')
 	missingLabor = missingLabor.append(pd.DataFrame(data={'PART': [part]}))
 	return missingLabor
 
 # this function adds a part to the Series tracking parts with no BOMs
 def add_to_missing_bom(part, missingBOM):
-	logging.debug('^v')
 	missingBOM = missingBOM.append(pd.DataFrame(data={'PART': [part]}))
 	return missingBOM
