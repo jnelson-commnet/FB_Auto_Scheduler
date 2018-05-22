@@ -9,18 +9,19 @@ def subtract_date(date, days):
 
 
 # Import Excel spreadsheets
-missing_labour = pd.read_excel("data\missing.xlsx").drop_duplicates(subset="PART").sort_values("PART")
-missing_BOM = pd.read_excel("data\missing.xlsx", sheet_name=1).drop_duplicates(subset="PART").sort_values("PART")
-scheduled_orders = pd.read_excel(r"data\finalSchedule.xlsx", sheet_name=1).reset_index(drop=True)
-scheduled_lines = pd.read_excel(r"data\finalSchedule.xlsx", sheet_name=2)
-lead_times = pd.read_excel(r"data\finalSchedule.xlsx", sheet_name=6).reset_index(drop=True)
-sales_orders = pd.read_excel(r"data\finalSchedule.xlsx", sheet_name=2).reset_index(drop=True)
+missing_labour = pd.read_excel("missing.xlsx").drop_duplicates(subset="PART").sort_values("PART")
+missing_BOM = pd.read_excel("missing.xlsx", sheet_name=1).drop_duplicates(subset="PART").sort_values("PART")
+scheduled_orders = pd.read_excel(r"finalSchedule.xlsx", sheet_name=1).reset_index(drop=True)
+scheduled_lines = pd.read_excel(r"finalSchedule.xlsx", sheet_name=2)
+lead_times = pd.read_excel(r"finalSchedule.xlsx", sheet_name=5).reset_index(drop=True)
+sales_orders = pd.read_excel(r"finalSchedule.xlsx", sheet_name=2).reset_index(drop=True)
 
 # Sheet preprocessing
 scheduled_orders["DATESCHEDULED"] = scheduled_orders["DATESCHEDULED"].apply(lambda x: str(x)[:10])
 scheduled_lines["DATESCHEDULED"] = scheduled_lines["DATESCHEDULED"].apply(lambda x: str(x)[:10])
 sales_orders["DATESCHEDULED"] = sales_orders["DATESCHEDULED"].apply(lambda x: str(x)[:10])
 scheduled_orders["LaborRequired"] = scheduled_orders["LaborRequired"].apply(lambda x: float(x))
+
 
 scheduled_lines = scheduled_lines[scheduled_lines["ORDERTYPE"] == "Finished Good"]
 scheduled_orders["PART"] = np.nan
@@ -46,6 +47,7 @@ for i in sales_orders.index.tolist():
 
     except (KeyError, IndexError):
         scheduled_orders.loc[i, "PART"] = "10"
+        sales_orders.loc[i, "PART"] = sales_orders.loc[i, "PART"][:25]
 
 sales_orders.fillna("10", inplace=True)
 sales_orders["Fulfillment Date"] = sales_orders["DATESCHEDULED"]
@@ -167,7 +169,7 @@ button_sales.pack(side="left")
 
 # Create mfg center pages
 for center in mfg_centers:
-    page_dict[center] = [Template(master, df=mfg_data[center], title=center), None]
+    page_dict[center] = [Template(master, df=mfg_data[center], title=str(center)), None]
     page_dict[center][1] = Button(menu_bar, text=center, command=page_dict[center][0].lift)
     page_dict[center][0].place(in_=container, x=0, y=0, relwidth=1, relheight=1)
     page_dict[center][1].pack(side="left")
