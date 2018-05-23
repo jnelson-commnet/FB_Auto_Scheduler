@@ -406,7 +406,7 @@ def schedule_loop_labor_types(modf, orderLeads, mfgCenters, dateList, orderRunTi
 
 # this function is for setting new earliest start dates for orders.
 # it will not set a date for a specific order if it is already set for a later date.
-def attempt_adjust_earliest_start_date(order, newDate, earliestDateList):
+def attempt_adjust_earliest_start_date(order, newDate, workCenter, earliestDateList):
 	earliestDateList.reset_index(drop=True, inplace=True)
 	dateListCheck = earliestDateList[earliestDateList['ORDER'] == order].copy()
 	if len(dateListCheck) > 0: # if it has no rows, then the order just needs to be appended
@@ -415,7 +415,8 @@ def attempt_adjust_earliest_start_date(order, newDate, earliestDateList):
 			earliestDateList.at[rowIndex, 'startDateLimit'] = newDate
 	else: # adds a fresh line with the order and its date limit
 		tempDateDF = pd.DataFrame(data={'ORDER': [order],
-									    'startDateLimit': [newDate]})
+									    'startDateLimit': [newDate],
+									    'MfgCenter': [workCenter]})
 		earliestDateList = earliestDateList.copy().append(tempDateDF.copy())
 	earliestDateList.reset_index(drop=True, inplace=True)
 	return earliestDateList.copy()
@@ -460,7 +461,7 @@ def set_dependency(order, dependency, dependencyDF):
 # this function schedules the current order during a loop
 def schedule_order(currentOrder, orderPriority, laborRequired, laborScheduled, dateListCenter, scheduledOrders, dependencies, earliestDateAllowed, unscheduledLines, scheduledLines):
 	# schedule the current order at time it would finish if started at attempted date
-	# if currentOrder == '26247:003':
+	# if currentOrder == 'P2':
 	# 	debug_here()
 	orderToSchedule = orderPriority[orderPriority['ORDER'] == currentOrder].copy()
 	# laborRequired = orderToSchedule['LaborRequired'].iat[0] # unnecessary because it's still saved from earlier
@@ -485,9 +486,13 @@ def schedule_order(currentOrder, orderPriority, laborRequired, laborScheduled, d
 	# HEY might need to add finishDate as earliest date limits to orders with this dependency, not sure
 	# adjusting earliest date limits of orders with current order as dependency
 	dependentList = dependencies[dependencies['dependency'] == currentOrder].copy()
+	tempWorkCenterReference = orderPriority.copy().append(scheduledOrders.copy())
 	for depOrder in dependentList['ORDER']:
+		tempWCDF = tempWorkCenterReference[tempWorkCenterReference['ORDER'] == depOrder].copy()
+		workCenter = tempWCDF['MfgCenter'].iat[0]
 		earliestDateAllowed = attempt_adjust_earliest_start_date(order=depOrder,
 								   						 		 newDate=finishDate,
+								   						 		 workCenter=workCenter,
 								   						 		 earliestDateList=earliestDateAllowed)
 	dependencies = dependencies[dependencies['dependency'] != currentOrder].copy()
 
@@ -519,3 +524,20 @@ def add_to_missing_labor(part, missingLabor):
 def add_to_missing_bom(part, missingBOM):
 	missingBOM = missingBOM.append(pd.DataFrame(data={'PART': [part]}))
 	return missingBOM
+
+"""Converts quantities to the default unit of measure for each part
+    uomid 1 is 'ea'
+    uomid 2 is 'ft'
+    uomid 7 is 'in' """
+def fix_uom(orgdf):
+    uomIssues = orgdf[orgdf['BOMUOM'] != orgdf['PARTUOM']].copy()
+    for index, row in uomIssues.iterrows():
+        if (row['BOMUOM'] == 1 and row['PARTUOM'] == 2): # if BOM is 'ea' and part is 'ft' then multiply by 2
+            orgdf.set_value(index, 'QTY', (row['QTY'] * 2))
+        elif (row['BOMUOM'] == 2 and row['PARTUOM'] == 1): # if BOM is 'ft' and part is 'ea' then divide by 2
+            orgdf.set_value(index, 'QTY', (row['QTY'] / 2))
+        elif (row['BOMUOM'] == 2 and row['PARTUOM'] == 7): # if BOM is 'ft' and part is 'in' then multiply by 12
+            orgdf.set_value(index, 'QTY', (row['QTY'] * 12))
+        elif (row['BOMUOM'] == 7 and row['PARTUOM'] == 2): # if BOM is 'in' and part is 'ft' then divide by 12
+            orgdf.set_value(index, 'QTY', (row['QTY'] / 12))
+    return(orgdf.copy())
