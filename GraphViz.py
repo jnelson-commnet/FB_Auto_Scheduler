@@ -340,7 +340,7 @@ xscrollbar = Scrollbar(search_box, orient=HORIZONTAL, command=display_box.xview)
 xscrollbar.grid(row=3, sticky=W + E)
 
 search_bar_entry = Entry(search_bar)
-search_button = Button(search_bar, text="Search", command=search)
+search_button = Button(search_bar, text="Search", command=lambda: search("event"))
 
 search_bar_entry.config(width=80)
 search_bar_entry.pack(side="left", expand=True)
