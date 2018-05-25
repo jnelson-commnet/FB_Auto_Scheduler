@@ -326,6 +326,10 @@ def order_schedule_attempt(orderPriority,
 			pass
 
 		currentOrder = limitOrderPriority['ORDER'].iat[x] # will need to check if there are restrictions for this order
+		# if len(limitOrderPriority) == 3:
+		# if 'P2002' in scheduledOrders['ORDER'].unique():
+		# 	if currentOrder == '26367:051':
+		# 		debug_here()
 		# ?Check first pri order for earliest available schedule time according to labor group (probably Shipping on first loop)
 		workCenter = limitOrderPriority['MfgCenter'].iat[x] # production area for current order
 		laborRequired = limitOrderPriority['LaborRequired'].iat[x] # maybe not necessary yet?
@@ -395,6 +399,8 @@ def order_schedule_attempt(orderPriority,
 		invShort = invShort.groupby('PART').sum()
 		invShort.reset_index(inplace=True)
 		invShort = invShort[invShort['QTYREMAINING'] < 0].copy()
+		# there are shortages listed due to really long floats, this should prevent those shortages causing repetetive loops.
+		invShort = invShort[invShort['QTYREMAINING'] < -0.000001].copy()
 
 		# if there are no shortages, then this order can be scheduled right now
 		if len(invShort) == 0:
@@ -811,6 +817,23 @@ while len(orderPriority) > 0:
 																																													   	   missingBOM=missingBOM)
 
 
+inventoryCounter = sch.add_inv_counter(inputTimeline=scheduledLines.copy(), backdate='1999-12-31 00:00:00', invdf=invDF.copy())
+
+debug_here()
+
+# startingInv = invDF.rename(columns={'INV':'QTYREMAINING'}).copy()
+# startingInv['DATESCHEDULED'] = todayTimestamp
+# startingInv['ITEM'] = 'Inventory'
+# startingInv['ORDER'] = 'Inventory'
+# startingInv['ORDERTYPE'] = 'Inventory'
+# startingInv['PARENT'] = 'Inventory'
+
+# inventoryCounter = scheduledLines.copy().append(startingInv.copy(), sort=True)
+# inventoryCounter.reset_index(drop=True, inplace=True)
+# inventoryCounter.sort_values(by=['PART','DATESCHEDULED'], ascending=[True,True], inplace=True)
+# inventoryCounter
+
+
 print('saving results')
 # save a copy of the schedule to excel
 writer = pd.ExcelWriter(finalSchedFilename)
@@ -821,6 +844,7 @@ unscheduledLines.to_excel(writer, 'unscheduledLines')
 earliestDateAllowed.to_excel(writer, 'earliestDateAllowed')
 dependencies.to_excel(writer, 'dependencies')
 leadTimes.to_excel(writer, 'leadTimes')
+inventoryCounter.to_excel(writer, 'inventoryCounter')
 writer.save()
 
 print('end of the lines')

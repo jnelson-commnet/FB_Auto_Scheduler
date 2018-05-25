@@ -530,14 +530,46 @@ def add_to_missing_bom(part, missingBOM):
     uomid 2 is 'ft'
     uomid 7 is 'in' """
 def fix_uom(orgdf):
-    uomIssues = orgdf[orgdf['BOMUOM'] != orgdf['PARTUOM']].copy()
-    for index, row in uomIssues.iterrows():
-        if (row['BOMUOM'] == 1 and row['PARTUOM'] == 2): # if BOM is 'ea' and part is 'ft' then multiply by 2
-            orgdf.set_value(index, 'QTY', (row['QTY'] * 2))
-        elif (row['BOMUOM'] == 2 and row['PARTUOM'] == 1): # if BOM is 'ft' and part is 'ea' then divide by 2
-            orgdf.set_value(index, 'QTY', (row['QTY'] / 2))
-        elif (row['BOMUOM'] == 2 and row['PARTUOM'] == 7): # if BOM is 'ft' and part is 'in' then multiply by 12
-            orgdf.set_value(index, 'QTY', (row['QTY'] * 12))
-        elif (row['BOMUOM'] == 7 and row['PARTUOM'] == 2): # if BOM is 'in' and part is 'ft' then divide by 12
-            orgdf.set_value(index, 'QTY', (row['QTY'] / 12))
-    return(orgdf.copy())
+	orgdf.reset_index(drop=True, inplace=True)
+	uomIssues = orgdf[orgdf['BOMUOM'] != orgdf['PARTUOM']].copy()
+	for index, row in uomIssues.iterrows():
+		origQty = row['QTY']
+		if (row['BOMUOM'] == 1 and row['PARTUOM'] == 2): # if BOM is 'ea' and part is 'ft' then multiply by 2
+			orgdf['QTY'].at[index] = origQty * 2
+			# orgdf.set_value(index, 'QTY', (row['QTY'] * 2))
+		elif (row['BOMUOM'] == 2 and row['PARTUOM'] == 1): # if BOM is 'ft' and part is 'ea' then divide by 2
+			orgdf['QTY'].at[index] = origQty / 2
+			# orgdf.set_value(index, 'QTY', (row['QTY'] / 2))
+		elif (row['BOMUOM'] == 2 and row['PARTUOM'] == 7): # if BOM is 'ft' and part is 'in' then multiply by 12
+			orgdf['QTY'].at[index] = origQty * 12
+			# orgdf.set_value(index, 'QTY', (row['QTY'] * 12))
+		elif (row['BOMUOM'] == 7 and row['PARTUOM'] == 2): # if BOM is 'in' and part is 'ft' then divide by 12
+			orgdf['QTY'].at[index] = origQty / 12
+			# orgdf.set_value(index, 'QTY', (row['QTY'] / 12))
+	return(orgdf.copy())
+
+"""Adds an inventory counter on the timeline sheet"""
+def add_inv_counter(inputTimeline, backdate, invdf):
+	timeorder = inputTimeline.sort_values(by=['PART', 'DATESCHEDULED'], ascending=[True, True]).copy()  # Sort the list of inventory actions
+	timeorder.reset_index(drop=True, inplace=True)  # reset the index, not super necessary but I like it
+	partlist = pd.merge(timeorder.copy(), invdf.copy(), on='PART', how='left')  # merge the Fishbowl inventory onto the part lines
+	partlist['INV'].fillna(0, inplace=True)  # anything missing a value in the new inventory column should be 0
+	resultdf = pd.DataFrame()  # to be used as the output with a counter attached
+	colHeaders = list(partlist)  # store the column headers
+	# backdate = '1999-12-31 00:00:00'  # this is an arbitrary date for starting inventory, is now input as a parameter above
+	orderType = 'Starting Inventory'  # this will be the order type label
+	for each in timeorder['PART'].unique():  # for each part in the list of actions
+		currentPart = each  # I just did this for readability but could be removed with minor adjustments
+		currentPartOrders = partlist[partlist['PART'] == currentPart].copy()  # make a dataFrame of orders with just the current part
+		tempdf = pd.DataFrame(columns=colHeaders, index=[0])  # make a temporary dataFrame with one empty line and use the column headers
+		tempdf[['ORDERTYPE', 'PART', 'DATESCHEDULED']] = [orderType, currentPart, backdate]  # make this line the starting inventory line
+		tempdf = tempdf.append(currentPartOrders, ignore_index=True)  # append the current part's orders to the starting line
+		tempdf['INV'].at[0] = tempdf['INV'].iloc[1]
+		# tempdf.set_value(index=0, col='INV', value= tempdf['INV'].iloc[1])  # this references the inventory on the other columns to set the starting inventory
+		ind = 1  # This is going to iterate through the index or rows
+		while ind < len(tempdf):  # while this indexer is less than the length
+			tempdf['INV'].at[ind] = (tempdf['INV'].iloc[ind-1] + tempdf['QTYREMAINING'].iloc[ind])
+			# tempdf.set_value(ind, 'INV', (tempdf['INV'].iloc[ind-1] + tempdf['QTYREMAINING'].iloc[ind]))  # set the next inventory value by adding the order amount to the previous inventory value
+			ind += 1  # step up the indexer
+		resultdf = resultdf.append(tempdf.copy(), ignore_index=True)  # store this as a result
+	return resultdf  # results are the new demand dataFrame
