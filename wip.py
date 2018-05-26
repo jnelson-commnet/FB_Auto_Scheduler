@@ -145,7 +145,7 @@ bomDF = pd.read_excel(bomFilename, header=0)
 fgBomDF = bomDF[bomDF['FG'] == 10].copy()
 rawBomDF = bomDF[bomDF['FG'] == 20].copy()
 rawBomDF['QTY'] = rawBomDF['QTY'].copy() * (-1)
-bomDF = fgBomDF.copy().append(rawBomDF.copy())
+bomDF = fgBomDF.copy().append(rawBomDF.copy(), sort=False)
 bomDF.sort_values(by='BOM', inplace=True)
 bomDF = sch.fix_uom(bomDF.copy())
 bomDF.reset_index(drop=True, inplace=True)
@@ -228,13 +228,13 @@ moPriority = moPriority[moPriority['MfgCenter'].notnull()].copy()
 moNullCheck['MfgCenter'] = 'Pro line'
 for missingPart in moNullCheck['PART']:
 	missingLabor = sch.add_to_missing_labor(part=missingPart, missingLabor=missingLabor)
-moPriority = moPriority.copy().append(moNullCheck.copy())
+moPriority = moPriority.copy().append(moNullCheck.copy(), sort=False)
 # sorting by custom field priority and then by various schedule dates
 moPriority.sort_values(by=['PRIORITY','MOSCHEDULEDATE','MOISSUEDATE','DATESCHEDULED'], ascending=[True,True,True,True], inplace=True)
 moPriority = moPriority[['ORDER','DATESCHEDULED','MfgCenter','LaborRequired']].copy()
 
 # now create order priority by appending SO and MO
-orderPriority = soPriority.copy().append(moPriority.copy())
+orderPriority = soPriority.copy().append(moPriority.copy(), sort=False)
 orderPriority.reset_index(drop=True, inplace=True)
 orderPriority['Priority'] = np.nan
 pri = 1
@@ -277,7 +277,7 @@ def order_schedule_attempt(orderPriority,
 	x = 0
 	# remove orders with dependencies to avoid iterating through each to check
 	limitOrderPriority = orderPriority.copy()
-	limitOrderPriority = limitOrderPriority.copy().append(dependencies.copy())
+	limitOrderPriority = limitOrderPriority.copy().append(dependencies.copy(), sort=False)
 	limitOrderPriority.drop_duplicates('ORDER', keep=False, inplace=True)
 	limitOrderPriority = limitOrderPriority[['ORDER','DATESCHEDULED','MfgCenter','LaborRequired','Priority']].copy()
 	# remove orders that will be date limited for their work center's next available date
@@ -297,7 +297,7 @@ def order_schedule_attempt(orderPriority,
 		# get list of date limited orders for this work area
 		dateLimitedOrders = earliestDateAllowed[earliestDateAllowed['MfgCenter'] == workCenter].copy()
 		dateLimitedOrders = dateLimitedOrders[dateLimitedOrders['startDateLimit'] >= dateAttemptStart].copy()
-		limitOrderPriority = limitOrderPriority.copy().append(dateLimitedOrders.copy())
+		limitOrderPriority = limitOrderPriority.copy().append(dateLimitedOrders.copy(), sort=False)
 		limitOrderPriority.drop_duplicates('ORDER', keep=False, inplace=True)
 	limitOrderPriority = limitOrderPriority[['ORDER','DATESCHEDULED','MfgCenter','LaborRequired','Priority']].copy()
 	limitOrderPriority.dropna(inplace=True)
@@ -316,7 +316,7 @@ def order_schedule_attempt(orderPriority,
 		currentOrderSum = scheduledLines[['PART','QTYREMAINING']].copy().groupby('PART').sum()
 		currentOrderSum.reset_index(inplace=True)
 		currentOrderSum.rename(columns={'QTYREMAINING':'INV'}, inplace=True)
-		currentInvSum = invDF.copy().append(currentOrderSum.copy())
+		currentInvSum = invDF.copy().append(currentOrderSum.copy(), sort=False)
 		currentInvSum = currentInvSum.groupby('PART').sum()
 		currentInvSum.reset_index(inplace=True)
 		negativeInv = currentInvSum[currentInvSum['INV'] < 0]
@@ -385,7 +385,7 @@ def order_schedule_attempt(orderPriority,
 
 		# add the orders to starting inventory to get a snapshot of inventory totals relevant to this schedule attempt
 		invCounter = invDF.rename(columns={'INV':'QTYREMAINING'}).copy()
-		invCounter = invCounter.copy().append(positiveOrderLinesToDate.copy().append(negativeOrderLines.copy()))
+		invCounter = invCounter.copy().append(positiveOrderLinesToDate.copy().append(negativeOrderLines.copy(), sort=False), sort=False)
 		invCounter = invCounter.copy().groupby('PART').sum()
 		invCounter.reset_index(inplace=True)
 
@@ -395,7 +395,7 @@ def order_schedule_attempt(orderPriority,
 		currentOrderLines = unscheduledLines[unscheduledLines['ORDER'] == currentOrder].copy()
 		currentShortageCheck = currentOrderLines[['PART','QTYREMAINING']].copy().groupby('PART').sum()
 		currentShortageCheck.reset_index(inplace=True)
-		invShort = invCounter.copy().append(currentShortageCheck.copy())
+		invShort = invCounter.copy().append(currentShortageCheck.copy(), sort=False)
 		invShort = invShort.groupby('PART').sum()
 		invShort.reset_index(inplace=True)
 		invShort = invShort[invShort['QTYREMAINING'] < 0].copy()
@@ -566,7 +566,7 @@ def order_schedule_attempt(orderPriority,
 									finishGoods = bomLines[bomLines['QTYREMAINING'] > 0].copy()
 									rawGoods['ORDERTYPE'] = 'Raw Good'
 									finishGoods['ORDERTYPE'] = 'Finished Good'
-									bomLines = finishGoods.copy().append(rawGoods.copy())
+									bomLines = finishGoods.copy().append(rawGoods.copy(), sort=False)
 									bomLines['DATESCHEDULED'] = dateAttemptStart
 									bomLines['PARENT'] = currentOrder
 									fakeOrderLine = bomLines[['ORDER','ITEM','ORDERTYPE','PART','QTYREMAINING','DATESCHEDULED','PARENT']].copy()
@@ -586,7 +586,7 @@ def order_schedule_attempt(orderPriority,
 									short = 0
 
 								# add the fake order lines to overall unscheduled lines list
-								unscheduledLines = unscheduledLines.copy().append(fakeOrderLine.copy())
+								unscheduledLines = unscheduledLines.copy().append(fakeOrderLine.copy(), sort=False)
 								# use the labor required per unit and multiple to retrieve the order's total labor
 								thisLabor = thisLaborRequ * multiple
 								
@@ -597,7 +597,7 @@ def order_schedule_attempt(orderPriority,
 																  	   'LaborRequired': [thisLabor],
 																  	   'Priority': [len(orderPriority)]})
 								# add to orderPriority
-								orderPriority = orderPriority.copy().append(tempOrderPriority.copy())
+								orderPriority = orderPriority.copy().append(tempOrderPriority.copy(), sort=False)
 								# log it as a dependency
 								dependencies = sch.set_dependency(order=currentOrder,
 															  	  dependency=OMGPLACEHOLDER,
@@ -692,7 +692,7 @@ def order_schedule_attempt(orderPriority,
 							# debug_here()
 							fakePOLines.at[fakePOLines.index[poLine], 'ORDER'] = OMGPLACEHOLDER
 						fakePOLines = fakePOLines[['ORDER','ITEM','ORDERTYPE','PART','QTYREMAINING','DATESCHEDULED','PARENT']].copy()
-						scheduledLines = scheduledLines.copy().append(fakePOLines.copy())
+						scheduledLines = scheduledLines.copy().append(fakePOLines.copy(), sort=False)
 
 						# schedule current order
 						logging.debug('scheduling order: ' + str(currentOrder))
@@ -742,7 +742,7 @@ print('entering loop')
 # so all of the dependencies will be worked out before this lead time issue comes up.
 
 scheduledLines = poDF.copy() # the POs are already scheduled, so list them in scheduled orders
-unscheduledLines = soDF.copy().append(moDF.copy()) # all SO and MO lines are unscheduled to start and they are in orderPriority as well
+unscheduledLines = soDF.copy().append(moDF.copy(), sort=False) # all SO and MO lines are unscheduled to start and they are in orderPriority as well
 
 # if the last loop didn't end up in a schedule success, then add in
 # an order called labor gap.  It will bump the attempted schedule date
@@ -756,7 +756,7 @@ while len(orderPriority) > 0:
 		print('should be making a gap order')
 		logging.debug('scheduleSuccess is False')
 		# check only for orders that don't have dependencies listed
-		indyOrders = orderPriority.copy().append(dependencies.copy())
+		indyOrders = orderPriority.copy().append(dependencies.copy(), sort=False)
 		indyOrders.drop_duplicates('ORDER', keep=False, inplace=True)
 		if len(indyOrders) > 0: # I think this should always be true at this point, but just in case ...
 			logging.debug('creating gap order')
@@ -784,7 +784,7 @@ while len(orderPriority) > 0:
 										 'MfgCenter': [gapCenter],
 										 'LaborRequired': [gapLabor],
 										 'Priority': [len(orderPriority)]})
-			scheduledOrders = scheduledOrders.copy().append(gapLine.copy())
+			scheduledOrders = scheduledOrders.copy().append(gapLine.copy(), sort=False)
 			print(gapOrder)
 		else: # this would only happen if there are dependencies creating a loop with each other (A need B, B also needs A)
 			# find the earliest start date possible for all remaining orders
@@ -819,7 +819,7 @@ while len(orderPriority) > 0:
 
 inventoryCounter = sch.add_inv_counter(inputTimeline=scheduledLines.copy(), backdate='1999-12-31 00:00:00', invdf=invDF.copy())
 
-debug_here()
+# debug_here()
 
 # startingInv = invDF.rename(columns={'INV':'QTYREMAINING'}).copy()
 # startingInv['DATESCHEDULED'] = todayTimestamp

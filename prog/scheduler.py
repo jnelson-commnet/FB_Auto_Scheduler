@@ -417,7 +417,7 @@ def attempt_adjust_earliest_start_date(order, newDate, workCenter, earliestDateL
 		tempDateDF = pd.DataFrame(data={'ORDER': [order],
 									    'startDateLimit': [newDate],
 									    'MfgCenter': [workCenter]})
-		earliestDateList = earliestDateList.copy().append(tempDateDF.copy())
+		earliestDateList = earliestDateList.copy().append(tempDateDF.copy(), sort=False)
 	earliestDateList.reset_index(drop=True, inplace=True)
 	return earliestDateList.copy()
 
@@ -455,7 +455,7 @@ def attempt_adjust_order_priority(adjustOrder, rootOrder, orderPriority):
 def set_dependency(order, dependency, dependencyDF):
 	tempDF = pd.DataFrame(data={'ORDER': [order],
 						   		'dependency': [dependency]})
-	dependencyDF = dependencyDF.copy().append(tempDF.copy())
+	dependencyDF = dependencyDF.copy().append(tempDF.copy(), sort=False)
 	return dependencyDF.copy()
 
 # this function schedules the current order during a loop
@@ -479,14 +479,14 @@ def schedule_order(currentOrder, orderPriority, laborRequired, laborScheduled, d
 		finishDate = laborDateRef['StartDate'].iat[0] # This line should error out because the dataFrame is empty
 	finishDate = laborDateRef['StartDate'].iat[0]
 	orderToSchedule['DATESCHEDULED'] = finishDate
-	scheduledOrders = scheduledOrders.copy().append(orderToSchedule.copy())
+	scheduledOrders = scheduledOrders.copy().append(orderToSchedule.copy(), sort=False)
 
 	orderPriority = orderPriority[orderPriority['ORDER'] != currentOrder].copy()
 
 	# HEY might need to add finishDate as earliest date limits to orders with this dependency, not sure
 	# adjusting earliest date limits of orders with current order as dependency
 	dependentList = dependencies[dependencies['dependency'] == currentOrder].copy()
-	tempWorkCenterReference = orderPriority.copy().append(scheduledOrders.copy())
+	tempWorkCenterReference = orderPriority.copy().append(scheduledOrders.copy(), sort=False)
 	for depOrder in dependentList['ORDER']:
 		tempWCDF = tempWorkCenterReference[tempWorkCenterReference['ORDER'] == depOrder].copy()
 		workCenter = tempWCDF['MfgCenter'].iat[0]
@@ -498,7 +498,7 @@ def schedule_order(currentOrder, orderPriority, laborRequired, laborScheduled, d
 
 	linesToSchedule = unscheduledLines[unscheduledLines['ORDER'] == currentOrder].copy()
 	linesToSchedule['DATESCHEDULED'] = finishDate
-	scheduledLines = scheduledLines.copy().append(linesToSchedule.copy())
+	scheduledLines = scheduledLines.copy().append(linesToSchedule.copy(), sort=False)
 
 	unscheduledLines = unscheduledLines[unscheduledLines['ORDER'] != currentOrder].copy()
 
@@ -517,12 +517,12 @@ def generate_fake_order(fakeOrderIter):
 
 # this function adds a part to the Series tracking parts with no labor info
 def add_to_missing_labor(part, missingLabor):
-	missingLabor = missingLabor.append(pd.DataFrame(data={'PART': [part]}))
+	missingLabor = missingLabor.append(pd.DataFrame(data={'PART': [part]}), sort=False)
 	return missingLabor
 
 # this function adds a part to the Series tracking parts with no BOMs
 def add_to_missing_bom(part, missingBOM):
-	missingBOM = missingBOM.append(pd.DataFrame(data={'PART': [part]}))
+	missingBOM = missingBOM.append(pd.DataFrame(data={'PART': [part]}), sort=False)
 	return missingBOM
 
 """Converts quantities to the default unit of measure for each part
@@ -563,7 +563,7 @@ def add_inv_counter(inputTimeline, backdate, invdf):
 		currentPartOrders = partlist[partlist['PART'] == currentPart].copy()  # make a dataFrame of orders with just the current part
 		tempdf = pd.DataFrame(columns=colHeaders, index=[0])  # make a temporary dataFrame with one empty line and use the column headers
 		tempdf[['ORDERTYPE', 'PART', 'DATESCHEDULED']] = [orderType, currentPart, backdate]  # make this line the starting inventory line
-		tempdf = tempdf.append(currentPartOrders, ignore_index=True)  # append the current part's orders to the starting line
+		tempdf = tempdf.append(currentPartOrders, ignore_index=True, sort=False)  # append the current part's orders to the starting line
 		tempdf['INV'].at[0] = tempdf['INV'].iloc[1]
 		# tempdf.set_value(index=0, col='INV', value= tempdf['INV'].iloc[1])  # this references the inventory on the other columns to set the starting inventory
 		ind = 1  # This is going to iterate through the index or rows
@@ -571,5 +571,5 @@ def add_inv_counter(inputTimeline, backdate, invdf):
 			tempdf['INV'].at[ind] = (tempdf['INV'].iloc[ind-1] + tempdf['QTYREMAINING'].iloc[ind])
 			# tempdf.set_value(ind, 'INV', (tempdf['INV'].iloc[ind-1] + tempdf['QTYREMAINING'].iloc[ind]))  # set the next inventory value by adding the order amount to the previous inventory value
 			ind += 1  # step up the indexer
-		resultdf = resultdf.append(tempdf.copy(), ignore_index=True)  # store this as a result
+		resultdf = resultdf.append(tempdf.copy(), ignore_index=True, sort=False)  # store this as a result
 	return resultdf  # results are the new demand dataFrame
