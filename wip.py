@@ -9,6 +9,8 @@ import numpy as np
 
 from prog import scheduler as sch
 
+import dependencies as dp
+
 from IPython.core.debugger import Tracer
 debug_here = Tracer()
 
@@ -47,14 +49,6 @@ finalSchedFilename = os.path.join(homey, 'finalSchedule.xlsx')
 missingFilename = os.path.join(homey, 'missing.xlsx')
 
 ### QUERIES ###
-
-# going to borrow some of the FB_Sim to run queries
-### HEY! This would be good to move for better access and clarity
-# sys.path.insert(0, forcPath)
-# import ForecastMain as fm
-# import ForecastAPI as fa
-# pull the usual FB_Sim queries
-# fa.run_queries(queryPath=sqlPath, dataPath=dataPath)
 
 # Live server:
 # sys.path.insert(0, 'Z:\Python projects\FishbowlAPITestProject')
@@ -225,7 +219,7 @@ moPriority.drop_duplicates('ORDER', keep='first', inplace=True) # drop duplicate
 moNullCheck = moPriority[moPriority['MfgCenter'].isnull()].copy()
 moPriority = moPriority[moPriority['MfgCenter'].notnull()].copy()
 # adding Pro line as area responsible for anything unknown, probably not a good idea
-moNullCheck['MfgCenter'] = 'Pro line'
+moNullCheck['MfgCenter'] = 'Unknown'
 for missingPart in moNullCheck['PART']:
 	missingLabor = sch.add_to_missing_labor(part=missingPart, missingLabor=missingLabor)
 moPriority = moPriority.copy().append(moNullCheck.copy(), sort=False)
@@ -246,6 +240,7 @@ for index in orderPriority.index:
 orderPriority['LaborRequired'] = orderPriority['LaborRequired'].fillna(0)
 
 ordPriHeaders = list(orderPriority.copy())
+ordPriHeaders.append('STARTDATE')
 scheduledOrders = pd.DataFrame(columns=ordPriHeaders) # this will store anything scheduled and removed from orderPriority
 
 # create a dataFrame for tracking earliest start date allowed limitations
@@ -416,7 +411,8 @@ def order_schedule_attempt(orderPriority,
 																																 	 dependencies=dependencies,
 																																 	 earliestDateAllowed=earliestDateAllowed,
 																																 	 unscheduledLines=unscheduledLines,
-																																 	 scheduledLines=scheduledLines)
+																																 	 scheduledLines=scheduledLines,
+																																 	 startDate=dateAttemptStart)
 			scheduleSuccess=True
 			return (orderPriority,
 					scheduledOrders,
@@ -449,7 +445,8 @@ def order_schedule_attempt(orderPriority,
 																																	 	 dependencies=dependencies,
 																																	 	 earliestDateAllowed=earliestDateAllowed,
 																																	 	 unscheduledLines=unscheduledLines,
-																																	 	 scheduledLines=scheduledLines)
+																																	 	 scheduledLines=scheduledLines,
+																																	 	 startDate=dateAttemptStart)
 				scheduleSuccess=True
 				return (orderPriority,
 						scheduledOrders,
@@ -707,7 +704,8 @@ def order_schedule_attempt(orderPriority,
 																																			 	 dependencies=dependencies,
 																																			 	 earliestDateAllowed=earliestDateAllowed,
 																																			 	 unscheduledLines=unscheduledLines,
-																																			 	 scheduledLines=scheduledLines)
+																																			 	 scheduledLines=scheduledLines,
+																																			 	 startDate=dateAttemptStart)
 					logging.debug('buy shortage handled, ' + str(currentOrder))
 					scheduleSuccess = True
 					return (orderPriority,
@@ -775,15 +773,20 @@ while len(orderPriority) > 0:
 			prevSchedLabor = scheduledOrders[scheduledOrders['MfgCenter'] == workCenter].copy()
 			if len(prevSchedLabor) > 0:
 				laborUsed = prevSchedLabor['LaborRequired'].sum()
-			gapLabor = limitLabor - laborUsed
+			# save the start date for the gap
+			availableLabor = dateListDict[gapCenter].copy()
+			availableLabor = availableLabor[availableLabor['AvailableLabor'] > laborUsed].copy()
+			gapStart = availableLabor['StartDate'].iat[0]
 			# add labor gap as a scheduled order for its production area
+			gapLabor = limitLabor - laborUsed
 			gapOrder, fakeOrderIter = sch.generate_fake_order(fakeOrderIter)
 			gapOrder = gapOrder + 'gap'
 			gapLine = pd.DataFrame(data={'ORDER': [gapOrder],
 										 'DATESCHEDULED': [gapDate],
 										 'MfgCenter': [gapCenter],
 										 'LaborRequired': [gapLabor],
-										 'Priority': [len(orderPriority)]})
+										 'Priority': [len(orderPriority)],
+										 'STARTDATE': [gapStart]})
 			scheduledOrders = scheduledOrders.copy().append(gapLine.copy(), sort=False)
 			print(gapOrder)
 		else: # this would only happen if there are dependencies creating a loop with each other (A need B, B also needs A)
@@ -847,96 +850,23 @@ leadTimes.to_excel(writer, 'leadTimes')
 inventoryCounter.to_excel(writer, 'inventoryCounter')
 writer.save()
 
-print('end of the lines')
+print('noting missing data')
 
 writer = pd.ExcelWriter(missingFilename)
 missingLabor.to_excel(writer, 'missingLabor')
 missingBOM.to_excel(writer, 'missingBOM')
 writer.save()
 
+print('analyzing dependencies')
+dp.dependencies()
 
-"""
-	if first pri order makes any part negative based on Inventory Counter:
-		shortage = parts and resulting negative quantities
-		# need to resolve all make shortages before you start creating fake POs
-		if there are shortages for make parts:
-			# will need to add a section searching for existing orders here
-			# just find where the orders cover the shortage then move their priorities up and set dependencies
-			# then fake for whatever's left.
-			# try this out:
-			for each make shortage:
-				mOrders = work orders where scheduled positive arrival in order of priority
-				if len(mOrders) > 0:
-					while shortage < 0:
-						add first work order in mOrders to shortage
-						place first work order priority just above current order in priority list
-				if shortage < 0:
-					create fake work order for shortage qty using BOM
-					place fake work order priority just above current order in priority list
-					add fake order to dependency list for current order
-			scheduleSuccess = True
-			return (orderPriority, scheduledOrders, scheduledLines, unscheduledLines, scheduleSuccess, earliestDateAllowed, dependencies)
-		# buy shortage time
-		else:
-			Lead time dates = earliest arrival based on lead time (if bought tomorrow) for all buy shortages
-			for each buy shortage:
-				pOrders = purchase orders where scheduled positive arrival date is after current schedule attempt date and before Lead time date
-				if len(pOrders) > 0:
-					if (sum of pOrders + shortage) is >= 0: # if the POs will cover the shortage
-						while shortage < 0:
-							shortage = add first pOrders qty to shortage
-							set Lead time dates of part to first pOrders schedule date
-							delete first line from pOrders
-					else:
-						shortage = shortage + sum of pOrders # shortage will still be negative and lead time is unaffected
-			Longest lead time date = latest of the arrival dates in Lead time dates
-			if Longest lead time date is after current attempt:
-				attempt_adjust_earliest_start_date(order, Longest lead time date, earliest date list)
-			else:
-				create fake POs for all negative shortages and set their fulfillment dates equal to Longest lead time date
-				schedule current order at current attempted date
-				remove current order from priority list
-				remove all dependencies listed for this order (and set those dependent orders earliest dates to after this order)
-			scheduleSuccess = True
-			return (orderPriority, scheduledOrders, scheduledLines, unscheduledLines, scheduleSuccess, earliestDateAllowed, dependencies)
-
-	else:
-		schedule first pri order
-		remove first pri order from priority list
-		remove all dependencies listed for this order (and set those dependent orders earliest dates to after this order)
-		scheduleSuccess = True
-		return (orderPriority, scheduledOrders, scheduledLines, unscheduledLines, scheduleSuccess, earliestDateAllowed, dependencies)
-return (orderPriority, scheduledOrders, scheduledLines, unscheduledLines, scheduleSuccess, earliestDateAllowed, dependencies)
-
-"""
-
-
-
-
+print('end of the lines')
 
 
 """
-SO priority comes from Fishbowl?
-MO priority comes from same.
-
-Scheduling SO fulfillment requires some awareness of shipping labor available/required.
-Set a value of labor required per line (either stored on part or product).
-Use that to create a labor required total for each SO.
-Then schedule SOs the same way as MOs but to Shipping's available labor.
-
-Also, whenever an order is scheduled, add it to a list.
-This will allow you to check what order it ended up using.
 
 Consider error handling for missing BOMs and negative inventory (shouldn't happen when orders are scheduled).
 Could avoid complicated BOMs missing tracking by creating a make parts missing BOMs list at the start.
 At the end, just reference all parts fake ordered from that list for the total.
-
-If you're trying to figure out how many loops it's going through,
-use print(loopnumber, end='').  Should print on one line to make
-it a bit more readable.
-
-When you hit a necessary labor gap, add an order called labor gap.  At the end, you'll be
-able to calculate how much labor gap was spent in each area.
-
 
 """
