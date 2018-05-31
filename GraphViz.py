@@ -7,7 +7,7 @@ from tkinter import *
 import webbrowser
 from tkinter import messagebox
 from os.path import dirname, abspath
-
+import ast
 
 # Custom object to handle the order of nodes placed in gantt chart.
 class Order:
@@ -22,13 +22,17 @@ class Order:
 
 
 # Converts a comma seperated string to a python list.
-def cell_to_list(cell):
-    reader = csv.reader([str(cell)])
-    return_list = []
-    for row in reader:
-        for i in row:
-            return_list.append(i)
-    return return_list
+# def cell_to_list(cell):
+#     reader = csv.reader([str(cell)])
+#     return_list = []
+#     for row in reader:
+#         for i in row:
+#             return_list.append(i)
+#     return return_list
+
+def cell_to_list(i):
+    li = ast.literal_eval(str(i))
+    return [n.strip() for n in li]
 
 
 # Extracts colors from graphviz.config and imports them.
@@ -43,7 +47,7 @@ def choose_color(item):
                 return color
 
         file.close()
-        return "#F4CA41"
+        return "#ff16f3"
 
 
 # Generates the gantt chart and saves it as an svg.
@@ -54,7 +58,7 @@ def generate_chart(df, start_date, end_date, save_file, input_root=None, max_dep
             if current_depth == int(max_depth):
                 return
 
-        if node_data.loc[value, "CHILDREN"] == ["NONE"]:
+        if node_data.loc[value, "CHILDREN"] == []:
             return
 
         else:
@@ -80,7 +84,7 @@ def generate_chart(df, start_date, end_date, save_file, input_root=None, max_dep
     node_data.replace(to_replace="nan", value="NONE", inplace=True)
     node_data["CHILDREN"] = node_data["CHILDREN"].apply(cell_to_list)
     node_data["PARENTS"] = node_data["PARENTS"].apply(cell_to_list)
-    node_data["START"] = node_data["START"].apply(cell_to_list)
+    node_data["START"] = node_data["START"]
 
     project_list = node_data["PROJECT"].drop_duplicates().tolist()
     resource_list = node_data["RESOURCE"].drop_duplicates().tolist()
@@ -88,7 +92,7 @@ def generate_chart(df, start_date, end_date, save_file, input_root=None, max_dep
 
     # Find all root nodes
     for node in node_data.index:
-        if node_data.loc[node, "PARENTS"] == ["NONE"]:
+        if node_data.loc[node, "PARENTS"] == []:
             roots.append(node)
 
     nodes = node_data.index.tolist()
@@ -108,9 +112,9 @@ def generate_chart(df, start_date, end_date, save_file, input_root=None, max_dep
     # Create task objects
     for node in nodes:
         datel = node_data.loc[node, "START"]
-        year = int(datel[0])
-        month = int(datel[1])
-        day = int(datel[2])
+        year = int(datel[:4])
+        month = int(datel[5:7])
+        day = int(datel[8:10])
         tasks[node] = gantt.Task(name=node,
                                  start=datetime.date(year, month, day),
                                  duration=int(float(node_data.loc[node, "DURATION"])),
@@ -135,11 +139,14 @@ def generate_chart(df, start_date, end_date, save_file, input_root=None, max_dep
     root_priority = sorted(root_priority, key=lambda x: x[1], reverse=True)
 
     # Higher priority roots will be placed in chart first
+    print("Arranging Nodes...\n=========================================")
     for root in root_priority:
         task_order.list.append(root[0])
         populate_order(root[0], 1)
+        print("Node {} completed".format(root))
 
     # Rearrange roots according to their "center of mass" based off of child nodes
+    print("Rearranging Roots...\n=========================================")
     for root in roots:
         best_index = 0
         task_order.list.remove(root)
@@ -157,13 +164,13 @@ def generate_chart(df, start_date, end_date, save_file, input_root=None, max_dep
                 best_dcount, best_index = dcount, i
 
         task_order.add_right(root, best_index)
+        print("Root {} completed".format(root))
 
     # Assign tasks to projects
     for key in task_order.list:
         projects[node_data.loc[key, "PROJECT"]].add_task(tasks[key])
 
-    for project in projects.values():
-        master_project.add_task(project)
+    master_project.add_task(projects["Main"])
 
     # Create svg
     master_project.make_svg_for_tasks(filename=save_file,
@@ -202,7 +209,8 @@ def submit():
 
     # Generate chart
     try:
-        generate_chart(pd.read_excel(r"data\toydata.xlsx", dtype=str).set_index("ORDER"),
+        print("Generating chart...\n=============================================")
+        generate_chart(pd.read_excel(r"dependencies.xlsx", dtype=str).set_index("ORDER"),
                        start_date, end_date, file_name, root_node, max_depth)
 
     except KeyError:
@@ -304,7 +312,10 @@ submit_button.grid(row=5, column=1, pady="2px")
 #############################################################################
 
 # Import line data
-line_data = pd.read_excel(r"data\toydata.xlsx", dtype=str, sheet_name="lineData").replace("nan", "NONE")
+line_data = pd.read_excel(r"dependencies.xlsx", dtype=str, sheet_name="lineData").replace("nan", "NONE")
+line_data["PART"] = line_data["PART"].apply(lambda x: x[:25])
+line_data["QUANTITY"] = line_data["QUANTITY"].apply(lambda x: round(float(x), 3))
+
 df = line_data
 
 # Search bar
@@ -338,6 +349,8 @@ display_box.grid(row=2, pady="2px", sticky=N + S + E + W)
 # Scrollbar
 xscrollbar = Scrollbar(search_box, orient=HORIZONTAL, command=display_box.xview)
 xscrollbar.grid(row=3, sticky=W + E)
+yscrollbar = Scrollbar(search_box, orient=VERTICAL, command=display_box.yview)
+yscrollbar.grid(row=2, column=2, sticky=N + S)
 
 search_bar_entry = Entry(search_bar)
 search_button = Button(search_bar, text="Search", command=lambda: search("event"))
