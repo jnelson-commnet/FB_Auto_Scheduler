@@ -459,7 +459,7 @@ def set_dependency(order, dependency, dependencyDF):
 	return dependencyDF.copy()
 
 # this function schedules the current order during a loop
-def schedule_order(currentOrder, orderPriority, laborRequired, laborScheduled, dateListCenter, scheduledOrders, dependencies, earliestDateAllowed, unscheduledLines, scheduledLines):
+def schedule_order(currentOrder, orderPriority, laborRequired, laborScheduled, dateListCenter, scheduledOrders, dependencies, earliestDateAllowed, unscheduledLines, scheduledLines, startDate):
 	# schedule the current order at time it would finish if started at attempted date
 	# if currentOrder == 'P2':
 	# 	debug_here()
@@ -479,6 +479,7 @@ def schedule_order(currentOrder, orderPriority, laborRequired, laborScheduled, d
 		finishDate = laborDateRef['StartDate'].iat[0] # This line should error out because the dataFrame is empty
 	finishDate = laborDateRef['StartDate'].iat[0]
 	orderToSchedule['DATESCHEDULED'] = finishDate
+	orderToSchedule['STARTDATE'] = startDate
 	scheduledOrders = scheduledOrders.copy().append(orderToSchedule.copy(), sort=False)
 
 	orderPriority = orderPriority[orderPriority['ORDER'] != currentOrder].copy()

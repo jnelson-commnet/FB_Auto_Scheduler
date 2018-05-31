@@ -35,3 +35,4 @@ where
     and woitem.woid in(select wo.id
                    from wo left join moitem on wo.moitemid = moitem.id
                    where wo.statusid in(10,20,30) and woitem.typeid in(10,20,30,31))
+    and (csmopriority.info != "40-Questionable" or csmopriority.info is null) -- removes "40-Questionable" from consideration

@@ -117,7 +117,7 @@ def dependencies():
     part_data.to_excel("FinishedGoods.xlsx")
 
     part_data = pd.read_excel("FinishedGoods.xlsx", dtype=object)
-    mfg_data = pd.read_excel("finalSchedule.xlsx", dtype=str).drop(
+    mfg_data = pd.read_excel("finalSchedule.xlsx", dtype=str, sheet_name="scheduledOrders").drop(
         labels=["DATESCHEDULED", "LaborRequired", "Priority"], axis=1).set_index("ORDER")
 
     columns = ["PARENTS", "CHILDREN", "START", "DURATION", "PROJECT", "RESOURCE"]
