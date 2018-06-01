@@ -851,6 +851,10 @@ inventoryCounter.to_excel(writer, 'inventoryCounter')
 writer.save()
 
 print('noting missing data')
+missingLabor.drop_duplicates('PART', keep='first', inplace=True)
+missingBOM.drop_duplicates('PART', keep='first', inplace=True)
+missingLabor.sort_values(by='PART', inplace=True)
+missingBOM.sort_values(by='PART', inplace=True)
 
 writer = pd.ExcelWriter(missingFilename)
 missingLabor.to_excel(writer, 'missingLabor')
