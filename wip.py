@@ -27,10 +27,6 @@ homey = os.path.abspath(os.path.dirname(__file__))
 # set directory paths
 dataPath = os.path.join(homey, 'data')
 # progPath = os.path.join(homey, 'prog')
-# simPath = os.path.join(homey, 'FB_Sim')
-# forcPath = os.path.join(simPath, 'ForecastRedoux')
-# this should probably be moved out of the simulator and into the main sql area, where that ends up
-# sqlPath = os.path.join(forcPath, 'SQL')
 queryPath = os.path.join(dataPath, 'query')
 
 # set paths to excel files
@@ -218,7 +214,7 @@ moPriority.drop_duplicates('ORDER', keep='first', inplace=True) # drop duplicate
 # bandaid for missing MfgCenter and LaborRequired
 moNullCheck = moPriority[moPriority['MfgCenter'].isnull()].copy()
 moPriority = moPriority[moPriority['MfgCenter'].notnull()].copy()
-# adding Pro line as area responsible for anything unknown, probably not a good idea
+# adding fake area assignment as area responsible for anything unknown
 moNullCheck['MfgCenter'] = 'Unknown'
 for missingPart in moNullCheck['PART']:
 	missingLabor = sch.add_to_missing_labor(part=missingPart, missingLabor=missingLabor)
@@ -526,8 +522,8 @@ def order_schedule_attempt(orderPriority,
 								if len(laborRef) > 0: # hopefully there's a default BOM reference with a labor estimate
 									thisBOM = laborRef['BOM'].iat[0]
 									thisCenter = laborRef['MfgCenter'].iat[0]
-									if pd.isnull(thisCenter): # if the production center isn't defined then guess pro line
-										thisCenter = 'Pro line'
+									if pd.isnull(thisCenter): # if the production center isn't defined then guess make as unknown
+										thisCenter = 'Unknown'
 									thisLaborRequ = laborRef['LaborPer'].iat[0]
 									if pd.isnull(thisLaborRequ):
 										thisLaborRequ = 0
@@ -542,11 +538,11 @@ def order_schedule_attempt(orderPriority,
 										# though it's likely still impossible.
 										thisBOM = fgBoms['BOM'].iat[0]
 										# just assign fake center and labor numbers
-										thisCenter = 'Pro line'
+										thisCenter = 'Unknown'
 										thisLaborRequ = 0
 									else:
 										thisBOM = part + ' NO BOM'
-										thisCenter = 'Pro line'
+										thisCenter = 'Unknown'
 										thisLaborRequ = 0
 								# reference the bomDF to create unscheduled order lines
 								bomLines = bomDF[bomDF['BOM'] == thisBOM].copy()
@@ -821,20 +817,6 @@ while len(orderPriority) > 0:
 
 
 inventoryCounter = sch.add_inv_counter(inputTimeline=scheduledLines.copy(), backdate='1999-12-31 00:00:00', invdf=invDF.copy())
-
-# debug_here()
-
-# startingInv = invDF.rename(columns={'INV':'QTYREMAINING'}).copy()
-# startingInv['DATESCHEDULED'] = todayTimestamp
-# startingInv['ITEM'] = 'Inventory'
-# startingInv['ORDER'] = 'Inventory'
-# startingInv['ORDERTYPE'] = 'Inventory'
-# startingInv['PARENT'] = 'Inventory'
-
-# inventoryCounter = scheduledLines.copy().append(startingInv.copy(), sort=True)
-# inventoryCounter.reset_index(drop=True, inplace=True)
-# inventoryCounter.sort_values(by=['PART','DATESCHEDULED'], ascending=[True,True], inplace=True)
-# inventoryCounter
 
 
 print('saving results')

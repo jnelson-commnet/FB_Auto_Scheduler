@@ -1,5 +1,0 @@
-Select
-        PART.NUM as "PART",
-        PART.DESCRIPTION as "DESCRIPTION"
-from
-	part
