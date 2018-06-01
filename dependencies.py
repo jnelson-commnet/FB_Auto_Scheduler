@@ -3,6 +3,7 @@ import numpy as np
 import ast
 import datetime
 
+#77326
 
 def dependencies():
     def string_to_list(se):
@@ -176,10 +177,10 @@ def dependencies():
                         quantity = 0
                     children.append(candidates[best_candidate_index])
 
-                    if order_data.loc[candidates[best_candidate_index], "CONSUMED"] != []:
+                    if order_data.loc[candidates[best_candidate_index], "CONSUMED"] == []:
                         purchase_dict["PART"] = part
                         purchase_dict["ORDER"] = candidates[best_candidate_index]
-                        dependency_lines =dependency_lines.append(purchase_dict, ignore_index=True)
+                        dependency_lines = dependency_lines.append(purchase_dict, ignore_index=True)
 
                     line_dict["CHILD"] = candidates[best_candidate_index]
                     dependency_lines = dependency_lines.append(line_dict, ignore_index=True)
