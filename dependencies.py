@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import ast
+import datetime
 
 
 def dependencies():
@@ -139,6 +140,7 @@ def dependencies():
             children = []
             for part in set(row["CONSUMED"]):
                 line_dict = {}
+                purchase_dict = {}
                 line_dict["PART"] = part
                 line_dict["ORDER"] = index
                 quantity = inventory[(inventory["PART"] == part) &
@@ -150,9 +152,9 @@ def dependencies():
                 while quantity > 0:
                     part_index = part_data[(part_data["PART"] == part) & (part_data["QUANTITY"] > 0)].index.values
                     candidates = part_data.loc[part_index, "ORDER"].tolist()
-
                     best_date = "2200-10-10"
                     best_candidate_index = 0
+
                     for i in range(len(candidates)):
                         date_string = order_data[order_data.index == candidates[i]]["DATESCHEDULED"].tolist()[0][:10]
                         if date_string < best_date:
@@ -165,30 +167,60 @@ def dependencies():
 
                     if remaining < -0.0001:
                         line_dict["QUANTITY"] = stock_before
+                        purchase_dict["QUANTITY"] = stock_before
                         quantity = abs(remaining)
                         part_data.loc[part_index[best_candidate_index], "QUANTITY"] = 0
                     else:
                         line_dict["QUANTITY"] = quantity
+                        purchase_dict["QUANTITY"] = quantity
                         quantity = 0
                     children.append(candidates[best_candidate_index])
+
+                    if order_data.loc[candidates[best_candidate_index], "CONSUMED"] != []:
+                        purchase_dict["PART"] = part
+                        purchase_dict["ORDER"] = candidates[best_candidate_index]
+                        dependency_lines =dependency_lines.append(purchase_dict, ignore_index=True)
+
                     line_dict["CHILD"] = candidates[best_candidate_index]
                     dependency_lines = dependency_lines.append(line_dict, ignore_index=True)
+
+            start_date = mfg_data.loc[index, "STARTDATE"][:10]
+            start_date_object = datetime.datetime.strptime(start_date, "%Y-%m-%d")
+            dependencies.loc[index, "START"] = start_date
+
+            end_date = row["DATESCHEDULED"][:10]
+            end_date_object = datetime.datetime.strptime(end_date, "%Y-%m-%d")
+
+            timedelta = end_date_object - start_date_object
+
+            if timedelta.days != 0:
+                dependencies.loc[index, "DURATION"] = abs(timedelta.days)
+            else:
+                dependencies.loc[index, "DURATION"] = 1
+
             dependencies.at[index, "CHILDREN"] = children
+
             for child in children:
                 dependencies.loc[child, "PARENTS"] = dependencies.loc[child, "PARENTS"] + [index]
 
             dependencies.loc[index, "RESOURCE"] = mfg_data.loc[index, "MfgCenter"]
-        dependencies.loc[index, "DURATION"] = 1
+
+        else:
+            dependencies.loc[index, "START"] = row["DATESCHEDULED"][:10]
+            dependencies.loc[index, "DURATION"] = 1
+
         if index[0] == "I":
             dependencies.loc[index, "PROJECT"] = "Inventory"
         else:
             dependencies.loc[index, "PROJECT"] = "Main"
 
-        date = row["DATESCHEDULED"]
-        dependencies.loc[index, "START"] = date[:10]
 
     print(dependencies.to_string())
     writer = pd.ExcelWriter("dependencies.xlsx")
     dependencies.to_excel(writer, "sheet1")
     dependency_lines.to_excel(writer, "lineData")
     writer.save()
+
+
+if __name__ == "__main__":
+    dependencies()
