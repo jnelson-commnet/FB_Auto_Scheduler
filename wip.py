@@ -122,11 +122,12 @@ while x < len(leadTimes):
 	if leadTimes['RealLeadTime'].iat[x] > 0:
 		leadTimes['LeadTimes'].iat[x] = leadTimes['RealLeadTime'].iat[x]
 	elif leadTimes['VendorLeadTime'].iat[x] > 0:
-		leadTimes['LeadTimes'].iat[x] = leadTimes['VendorLeadTime'].iat[x]
+		# leadTimes['LeadTimes'].iat[x] = leadTimes['VendorLeadTime'].iat[x]
+		leadTimes['LeadTimes'].iat[x] = 15 # adding this because some of the vendor lead info is way off
 	x += 1
 leadTimes = leadTimes[['PART','Make/Buy','AvgCost','LeadTimes']].copy()
 ### this is a bandaid, I think there will be problems with NAN values later.  Need to figure out eventually.
-leadTimes.fillna(10, inplace=True)
+leadTimes.fillna(15, inplace=True)
 
 # save current BOMs
 bomDF = pd.read_excel(bomFilename, header=0)
