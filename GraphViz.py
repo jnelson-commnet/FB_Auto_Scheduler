@@ -366,6 +366,6 @@ config_box.grid(row=0, column=0, padx="5px", pady="4px", sticky=N + S + E + W)
 search_box.grid(row=0, rowspan=2, column=1, padx="5px", pady="5px", sticky=N + S + E + W)
 
 # Allow searching with the press of enter key
-search_bar_entry.bind("<Return>", search)
+search_bar_entry.bind("<Return>", lambda event: search(event=event))
 
 mainloop()

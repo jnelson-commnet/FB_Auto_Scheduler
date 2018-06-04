@@ -70,7 +70,7 @@ mfg_data = dict((i, None) for i in mfg_centers)
 # Create a dictionary of dataframes for each center
 for center in mfg_centers:
     mfg_data[center] = scheduled_orders[scheduled_orders["MfgCenter"]
-                                        == center].reset_index(drop=True).drop(columns=["MfgCenter", "Priority"])
+                                        == center].reset_index(drop=True).drop(columns=["MfgCenter", "Priority", "STARTDATE"])
     mfg_data[center].rename(columns={"DATESCHEDULED": "Date Scheduled",
                                      "ORDER": "Order",
                                      "PART": "Part",
@@ -130,20 +130,84 @@ class BOM(Page):
 
 # Create general template for manufacturing centers
 class Template(Page):
-    def __init__(self, *args, df, title, **kwargs):
+    def __init__(self, *args, df, searchby, title, **kwargs):
         Page.__init__(self, *args, **kwargs)
+        self.data = df
+        self.df = df
+        self.searchby = searchby
+
         scrollbar = Scrollbar(self)
         scrollbar.pack(side=RIGHT, fill=Y)
 
-        listbox = Text(self, yscrollcommand=scrollbar.set)
+        self.listbox = Text(self, yscrollcommand=scrollbar.set)
+        self.listbox.insert(END, title + "\n----------------------\n")
+        self.listbox.insert(END, df.to_string(header=True))
 
-        listbox.insert(END, title + "\n----------------------\n")
-        listbox.insert(END, df.to_string(header=True))
+        search_box = Frame(self)
 
-        listbox.pack(side=LEFT, fill=BOTH, expand=True)
+        search_bar = Frame(search_box)
+        Label(search_bar, text="Detail Search:".format(searchby)).pack(side="left")
+        sort_bar = Frame(search_box)
+        sort_bar.grid(row=1, columnspan=8, sticky="W")
+        Label(sort_bar, text="Sort by: ").pack(side="left")
+        self.sort_bool = IntVar()
+        sort_order_up = Radiobutton(sort_bar, text="Ascending", variable=self.sort_bool, value=1)
+        sort_order_down = Radiobutton(sort_bar, text="Descending", variable=self.sort_bool, value=0)
 
-        scrollbar.config(command=listbox.yview)
-        listbox.config(state=DISABLED)
+        headers = list(df)
+        sort_buttons = {}
+
+        for header in headers:
+            sort_buttons[header] = Button(sort_bar, text=header, command=lambda h=header: self.sort(h))
+            sort_buttons[header].pack(side="left")
+
+        sort_order_up.pack(side="left")
+        sort_order_down.pack(side="left")
+
+        self.search_bar_entry = Entry(search_bar)
+        search_button = Button(search_bar, text="Search", command=lambda: self.search(event="event", dataframe=self.data))
+
+        self.search_bar_entry.config(width=80)
+        self.search_bar_entry.pack(side="left", expand=True)
+        search_button.pack(side="left", padx="5")
+        search_bar.grid(row=0)
+
+        # display_box = Text(search_box, wrap=NONE)
+        # display_box.grid(row=2, pady="2px", sticky=N + S + E + W)
+
+        search_box.pack(side=TOP, fill=X)
+        self.listbox.pack(side=TOP, fill=BOTH, expand=True)
+
+        scrollbar.config(command=self.listbox.yview)
+        self.listbox.config(state=DISABLED)
+        self.search_bar_entry.bind("<Return>", lambda event: self.search(event=event, dataframe=self.data))
+
+    def search(self, event, dataframe):
+        self.listbox.config(width=80, state=NORMAL)
+
+        # Reference global dataframe df, the contents to be displayed in the search box
+        df = dataframe[dataframe[self.searchby] == self.search_bar_entry.get()]
+        self.df = df
+
+        # display df
+        if len(df[self.searchby].tolist()) > 0:
+            self.listbox.delete(1.0, END)
+            self.listbox.insert(END, df.to_string(header=True))
+
+        if not self.search_bar_entry.get():
+            df = dataframe
+            self.df = df
+            self.listbox.delete(1.0, END)
+            self.listbox.insert(END, df.to_string(header=True))
+
+        self.listbox.config(width=80, state=DISABLED)
+        return
+
+    def sort(self, header):
+        self.listbox.config(width=80, state=NORMAL)
+        self.listbox.delete(1.0, END)
+        self.listbox.insert(END, self.df.sort_values(header, ascending=self.sort_bool.get()).to_string(header=True))
+        self.listbox.config(width=80, state=DISABLED)
 
 
 page_dict = {}
@@ -153,7 +217,7 @@ menu_bar = Frame(master)
 # Create labour, bom, and sales pages
 labour = Labour(master, df=missing_labour, title="Labour")
 bom = BOM(master, df=missing_BOM, title="Bill of Materials")
-sales = Template(master, df=sales_orders, title="Purchasing")
+sales = Template(master, df=sales_orders, searchby="Part", title="Purchasing")
 
 labour.place(in_=container, x=0, y=0, relwidth=1, relheight=1)
 bom.place(in_=container, x=0, y=0, relwidth=1, relheight=1)
@@ -169,7 +233,7 @@ button_sales.pack(side="left")
 
 # Create mfg center pages
 for center in mfg_centers:
-    page_dict[center] = [Template(master, df=mfg_data[center], title=str(center)), None]
+    page_dict[center] = [Template(master, df=mfg_data[center], searchby="Order",title=str(center)), None]
     page_dict[center][1] = Button(menu_bar, text=center, command=page_dict[center][0].lift)
     page_dict[center][0].place(in_=container, x=0, y=0, relwidth=1, relheight=1)
     page_dict[center][1].pack(side="left")
