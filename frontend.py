@@ -65,6 +65,8 @@ sales_orders = sales_orders[["Order Date", "Fulfillment Date", "PART", "QTYREMAI
 
 # Make list of manufacturing centers
 mfg_centers = scheduled_orders.drop_duplicates(subset="MfgCenter").sort_values("MfgCenter").MfgCenter.tolist()
+mfg_centers = [i for i in mfg_centers if str(i) != "nan"]
+print(mfg_centers)
 mfg_data = dict((i, None) for i in mfg_centers)
 
 # Create a dictionary of dataframes for each center
@@ -130,11 +132,14 @@ class BOM(Page):
 
 # Create general template for manufacturing centers
 class Template(Page):
-    def __init__(self, *args, df, searchby, title, **kwargs):
+    def __init__(self, *args, df, searchby, totalby, title, **kwargs):
         Page.__init__(self, *args, **kwargs)
         self.data = df
         self.df = df
         self.searchby = searchby
+        self.totalby = totalby
+        self.total = StringVar()
+        self.total.set("NaN")
 
         scrollbar = Scrollbar(self)
         scrollbar.pack(side=RIGHT, fill=Y)
@@ -146,10 +151,19 @@ class Template(Page):
         search_box = Frame(self)
 
         search_bar = Frame(search_box)
-        Label(search_bar, text="Detail Search:".format(searchby)).pack(side="left")
+        Label(search_bar, text="{} Detail Search:".format(searchby)).pack(side="left")
         sort_bar = Frame(search_box)
         sort_bar.grid(row=1, columnspan=8, sticky="W")
         Label(sort_bar, text="Sort by: ").pack(side="left")
+        Label(sort_bar, textvariable=self.total).pack(side="right")
+        Label(sort_bar, text="Total {} {}: ".format(self.searchby, self.totalby)).pack(side="right")
+
+        totalby_list = self.df[self.totalby].tolist()
+        totalby_list = [float(i) for i in totalby_list]
+        total = round(sum(totalby_list), 1)
+        self.total.set(str(total))
+
+        self.listbox.config(width=80, state=DISABLED)
         self.sort_bool = IntVar()
         sort_order_up = Radiobutton(sort_bar, text="Ascending", variable=self.sort_bool, value=1)
         sort_order_down = Radiobutton(sort_bar, text="Descending", variable=self.sort_bool, value=0)
@@ -200,6 +214,10 @@ class Template(Page):
             self.listbox.delete(1.0, END)
             self.listbox.insert(END, df.to_string(header=True))
 
+        totalby_list = self.df[self.totalby].tolist()
+        totalby_list = [float(i) for i in totalby_list]
+        total = round(sum(totalby_list), 1)
+        self.total.set(str(total))
         self.listbox.config(width=80, state=DISABLED)
         return
 
@@ -217,7 +235,7 @@ menu_bar = Frame(master)
 # Create labour, bom, and sales pages
 labour = Labour(master, df=missing_labour, title="Labour")
 bom = BOM(master, df=missing_BOM, title="Bill of Materials")
-sales = Template(master, df=sales_orders, searchby="Part", title="Purchasing")
+sales = Template(master, df=sales_orders, searchby="Part", totalby="Quantity" ,title="Purchasing")
 
 labour.place(in_=container, x=0, y=0, relwidth=1, relheight=1)
 bom.place(in_=container, x=0, y=0, relwidth=1, relheight=1)
@@ -233,7 +251,7 @@ button_sales.pack(side="left")
 
 # Create mfg center pages
 for center in mfg_centers:
-    page_dict[center] = [Template(master, df=mfg_data[center], searchby="Order",title=str(center)), None]
+    page_dict[center] = [Template(master, df=mfg_data[center], searchby="Part", totalby="Labour Required", title=str(center)), None]
     page_dict[center][1] = Button(menu_bar, text=center, command=page_dict[center][0].lift)
     page_dict[center][0].place(in_=container, x=0, y=0, relwidth=1, relheight=1)
     page_dict[center][1].pack(side="left")
