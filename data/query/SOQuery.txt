@@ -31,5 +31,5 @@ from
 where
         so.statusid in(20, 25)
         and PART.TYPEID = 10
-        and soitem.typeid in(10,20)
+        and soitem.typeid in(10) -- change to 10 and 20 if credit returns should be included
         and soitem.statusid in(10,11,12,14,20,30,40)

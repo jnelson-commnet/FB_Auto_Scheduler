@@ -47,46 +47,46 @@ missingFilename = os.path.join(homey, 'missing.xlsx')
 ### QUERIES ###
 
 # Live server:
-# sys.path.insert(0, 'Z:\Python projects\FishbowlAPITestProject')
-# import connecttest
+sys.path.insert(0, 'Z:\Python projects\FishbowlAPITestProject')
+import connecttest
 
-# print('queries started')
+print('queries started')
 
-# myresults = connecttest.create_connection(queryPath, 'leadtimequery.txt')
-# myexcel = connecttest.makeexcelsheet(myresults)
-# connecttest.save_workbook(myexcel, dataPath, 'LeadTimes.xlsx')
+myresults = connecttest.create_connection(queryPath, 'mfgcenterquery.txt')
+myexcel = connecttest.makeexcelsheet(myresults)
+connecttest.save_workbook(myexcel, dataPath, 'MfgCenters.xlsx')
 
-# myresults = connecttest.create_connection(queryPath, 'mfgcenterquery.txt')
-# myexcel = connecttest.makeexcelsheet(myresults)
-# connecttest.save_workbook(myexcel, dataPath, 'MfgCenters.xlsx')
+myresults = connecttest.create_connection(queryPath, 'leadtimequery.txt')
+myexcel = connecttest.makeexcelsheet(myresults)
+connecttest.save_workbook(myexcel, dataPath, 'LeadTimes.xlsx')
 
-# myresults = connecttest.create_connection(queryPath, 'BOMQuery.txt')
-# myexcel = connecttest.makeexcelsheet(myresults)
-# connecttest.save_workbook(myexcel, dataPath, 'BOMs.xlsx')
+myresults = connecttest.create_connection(queryPath, 'BOMQuery.txt')
+myexcel = connecttest.makeexcelsheet(myresults)
+connecttest.save_workbook(myexcel, dataPath, 'BOMs.xlsx')
 
-# myresults = connecttest.create_connection(queryPath, 'DescQuery.txt')
-# myexcel = connecttest.makeexcelsheet(myresults)
-# connecttest.save_workbook(myexcel, dataPath, 'Descs.xlsx')
+myresults = connecttest.create_connection(queryPath, 'DescQuery.txt')
+myexcel = connecttest.makeexcelsheet(myresults)
+connecttest.save_workbook(myexcel, dataPath, 'Descs.xlsx')
 
-# myresults = connecttest.create_connection(queryPath, 'INVQuery.txt')
-# myexcel = connecttest.makeexcelsheet(myresults)
-# connecttest.save_workbook(myexcel, dataPath, 'INVs.xlsx')
+myresults = connecttest.create_connection(queryPath, 'INVQuery.txt')
+myexcel = connecttest.makeexcelsheet(myresults)
+connecttest.save_workbook(myexcel, dataPath, 'INVs.xlsx')
 
-# myresults = connecttest.create_connection(queryPath, 'MOQueryRedoux.txt')
-# myexcel = connecttest.makeexcelsheet(myresults)
-# connecttest.save_workbook(myexcel, dataPath, 'MOs.xlsx')
+myresults = connecttest.create_connection(queryPath, 'MOQueryRedoux.txt')
+myexcel = connecttest.makeexcelsheet(myresults)
+connecttest.save_workbook(myexcel, dataPath, 'MOs.xlsx')
 
-# myresults = connecttest.create_connection(queryPath, 'PartQuery.txt')
-# myexcel = connecttest.makeexcelsheet(myresults)
-# connecttest.save_workbook(myexcel, dataPath, 'Parts.xlsx')
+myresults = connecttest.create_connection(queryPath, 'PartQuery.txt')
+myexcel = connecttest.makeexcelsheet(myresults)
+connecttest.save_workbook(myexcel, dataPath, 'Parts.xlsx')
 
-# myresults = connecttest.create_connection(queryPath, 'POQuery.txt')
-# myexcel = connecttest.makeexcelsheet(myresults)
-# connecttest.save_workbook(myexcel, dataPath, 'POs.xlsx')
+myresults = connecttest.create_connection(queryPath, 'POQuery.txt')
+myexcel = connecttest.makeexcelsheet(myresults)
+connecttest.save_workbook(myexcel, dataPath, 'POs.xlsx')
 
-# myresults = connecttest.create_connection(queryPath, 'SOQuery.txt')
-# myexcel = connecttest.makeexcelsheet(myresults)
-# connecttest.save_workbook(myexcel, dataPath, 'SOs.xlsx')
+myresults = connecttest.create_connection(queryPath, 'SOQuery.txt')
+myexcel = connecttest.makeexcelsheet(myresults)
+connecttest.save_workbook(myexcel, dataPath, 'SOs.xlsx')
 
 # myresults = connecttest.create_connection(queryPath, 'LABQuery.txt')
 # myexcel = connecttest.makeexcelsheet(myresults)
