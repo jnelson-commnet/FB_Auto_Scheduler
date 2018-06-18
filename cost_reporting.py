@@ -1,11 +1,37 @@
 import pandas as pa
 import os
+import numpy as np
 
-partCost = read part.xlsx for avgcost info
-transact = read scheduled lines for transaction list
-invdf = read inventory for starting inventory info
+# save current working directory as homey
+homey = os.path.abspath(os.path.dirname(__file__))
+# homey = os.getcwd() # works in jupyter notebook
 
-inv = pd.merge(part, inv, how='left', on='PART')
+# set directory paths
+dataPath = os.path.join(homey, 'data')
+
+# set paths to excel files
+partFilename = os.path.join(dataPath, 'Parts.xlsx')
+invFilename = os.path.join(dataPath, 'INVs.xlsx')
+finalSchedFilename = os.path.join(homey, 'finalSchedule.xlsx')
+
+print('retrieving data')
+
+# save current inventory
+invDF = pd.read_excel(invFilename, header=0)
+invDF['INV'] = invDF['INV'].round(2) # just getting the floats out.
+# save current parts list
+partDF = pd.read_excel(partFilename, header=0)
+# get transaction list from auto_scheduler
+transact = pd.read_excel(finalSchedFilename, sheet_name='scheduledLines', header=0)
+
+
+
+inv = pd.merge(partDF.copy(), invDF.copy(), how='left', on='PART')
+inv['INV'].fillna(0, inplace=True)
+inv['ORDERTYPE'] = 'Starting Inventory'
+inv['ORDER'] = 'StartingInv'
+inv['ITEM'] = 0
+
 
 
 for part in transact.PART:
