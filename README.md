@@ -38,3 +38,21 @@ Project steps:
 	5. Report excess inventory purchased or built. (e.g. extra parts purchased on longer lead time for lower cost.)
 	6. Create a forecasted analysis of possible cost compared to revenue possible.
 	7. Add a check for unused/non-moving inventory.
+
+
+Usage Notes (Oct 16, 2018):
+
+- Manufacture Order Query is hard coded to ignore orders marked as having planning states "40-Questionable".  Priority of MO completion is determined by the planning state field.  If a planning state is not specified, it will default to "20-Planned."
+- The MFG Center Query determines labor needed per unit built.  The main fields in use are "LaborPer", which references the Unit Assembly multiple field in the BOM, and "MfgCenter", which references the Production Center.  A BOM is only referenced if it is active and listed as the default BOM of a "Make" part.
+- If there is no labor information available for a part, it is assumed that the labor required is 0 hours.  This is because labor estimates for finished panels are for the whole build time needed in a production area.  So sub-assembly labor needs to be ignored.  There is a list produced at the end of the script to audit which parts are missing BOMs or Labor info.
+- The lead time of a part is determined by the RealLeadTime field of a part.  If that is not usable, the part will automatically use a lead time of 15.
+- The Bill of Materials query retrieves all Finished Good and Raw Good lines with positive quantities.  Raw Goods are changed to negative in the script to make order processing more natural throughout.  Only active BOMs are included.
+- The inventory query sums all inventory by part, so there is no differentiation for inventory split between location groups or consideration of time needed for Transfer Orders.  Currently, the location groups considered are CA LA, WA Tech Grp, TN, and SAC.  These will need to be changed to the more active locations.
+- Available labor per production group is kept in a manually updated excel sheet.  This contains the names of the production areas along with an estimate of how many hours per day are available to use toward production.
+- The calendar of available hours is created in the script.  It does not include weekends.  It also doesn't skip holidays, so the script will schedule work on New Year's Day.
+- Inactive Parts are included in transactions since inventory can still exist and they can be on orders.
+- Purchase Order lines are assumed to be received into inventory when their scheduled fulfillment dates indicate.  There is no handling for blanket orders or stock held with a vendor.
+- Sales Order priority is determined first by the Priority field, second by the Desired Customer Delivery Date field, and third by Date Issued.
+- Sales Order credit return lines are currently not included in the query.
+- Labor Required for each Sales Order is hard coded to be 1 hour of Shipping's time.
+- Manufacture Orders are considered second priority to Sales Orders.  This means that whichever SO is highest priority can increase the priority on the MO that feeds it, even if that MO is initially labeled as low priority.
